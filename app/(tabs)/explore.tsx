@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
+import { router } from 'expo-router';
 import Svg, {
   Path,
   Circle,
@@ -108,8 +109,8 @@ const NumbersIcon = ({ size = 22, color = '#fff' }: { size?: number; color?: str
 const GreetingIcon = ({ size = 22, color = '#fff' }: { size?: number; color?: string }) => (
   <Ionicons name="hand-left-outline" size={size} color={color} />
 );
-const ClassroomIcon = ({ size = 22, color = '#fff' }: { size?: number; color?: string }) => (
-  <Ionicons name="people-outline" size={size} color={color} />
+const ConversationIcon = ({ size = 22, color = '#fff' }: { size?: number; color?: string }) => (
+  <Ionicons name="chatbubbles-outline" size={size} color={color} />
 );
 
 // ── Types ──
@@ -129,39 +130,21 @@ interface Lesson {
   xp: number;
   done: boolean;
   active?: boolean;
-  isChest?: boolean;
   isExam?: boolean;
   signs: Sign[];
 }
 
-// ── Lesson Data ──
+// ── Updated Lesson Data with new titles (Chest Challenge removed) ──
 export const lessonData: Lesson[] = [
   {
     id: 1,
-    category: 'Greetings',
-    title: 'Hello & Goodbye',
-    desc: 'Essential everyday greetings in FSL',
-    color: '#2563EB',
-    iconBg: '#EFF6FF',
-    duration: '4 min',
-    xp: 15,
-    done: true,
-    signs: [
-      { letter: 'Hello', hint: 'Open hand, fingers together, wave gently from the wrist.' },
-      { letter: 'Goodbye', hint: 'Open hand raised, wave fingers down then back up.' },
-      { letter: 'Good', hint: 'Flat hand moves forward from chin level downward.' },
-      { letter: 'Morning', hint: 'Forearm rises up like the sun — a gentle sweeping motion.' },
-    ],
-  },
-  {
-    id: 2,
     category: 'Alphabet',
-    title: 'Letters A–E',
-    desc: 'Learn the first 5 letters of the FSL alphabet',
+    title: 'Learn Alphabets A-N',
+    desc: 'Master the first half of the FSL alphabet from A to N',
     color: '#2563EB',
     iconBg: '#EFF6FF',
-    duration: '5 min',
-    xp: 20,
+    duration: '8 min',
+    xp: 30,
     done: true,
     signs: [
       { letter: 'A', hint: 'Closed fist, thumb resting on the side of the index finger.' },
@@ -169,99 +152,147 @@ export const lessonData: Lesson[] = [
       { letter: 'C', hint: 'Curve your hand into a C shape — like holding a can.' },
       { letter: 'D', hint: 'Index finger points up, other fingers and thumb form a circle.' },
       { letter: 'E', hint: 'All fingers curl down toward the palm, thumb tucked under.' },
+      { letter: 'F', hint: 'Index finger and thumb touch to form a circle, other fingers up.' },
+      { letter: 'G', hint: 'Index finger and thumb point sideways, parallel to the ground.' },
+      { letter: 'H', hint: 'Index and middle finger point sideways together, palm facing you.' },
+      { letter: 'I', hint: 'Pinky finger points up, all other fingers folded into a fist.' },
+      { letter: 'J', hint: 'Like I but trace a J shape in the air with your pinky.' },
+      { letter: 'K', hint: 'Index and middle fingers point up, thumb between them.' },
+      { letter: 'L', hint: 'Index finger points up, thumb points sideways — like an L.' },
+      { letter: 'M', hint: 'Three fingers fold over the thumb — like a fist with thumb tucked.' },
+      { letter: 'N', hint: 'Two fingers fold over the thumb — like a fist with thumb tucked.' },
+    ],
+  },
+  {
+    id: 2,
+    category: 'Alphabet',
+    title: 'Learn Alphabets O-Z',
+    desc: 'Complete the FSL alphabet with letters O through Z',
+    color: '#2563EB',
+    iconBg: '#EFF6FF',
+    duration: '8 min',
+    xp: 30,
+    done: true,
+    signs: [
+      { letter: 'O', hint: 'Form a full circle with all fingertips touching the thumb.' },
+      { letter: 'P', hint: 'Like K but point the index finger downward.' },
+      { letter: 'Q', hint: 'Like G but point both fingers downward.' },
+      { letter: 'R', hint: 'Cross the index finger over the middle finger.' },
+      { letter: 'S', hint: 'Tight fist with thumb folded across the front of the fingers.' },
+      { letter: 'T', hint: 'Tuck the thumb between index and middle fingers in a fist.' },
+      { letter: 'U', hint: 'Index and middle fingers point up, held close together.' },
+      { letter: 'V', hint: 'Index and middle fingers point up, spread apart in a V.' },
+      { letter: 'W', hint: 'Index, middle, and ring fingers point up, spread apart.' },
+      { letter: 'X', hint: 'Hook the index finger into a claw shape.' },
+      { letter: 'Y', hint: 'Pinky and thumb point out, middle three fingers tucked in.' },
+      { letter: 'Z', hint: 'Use the index finger to trace a Z in the air.' },
     ],
   },
   {
     id: 3,
-    category: 'Greetings',
-    title: 'Thank You & Please',
-    desc: 'Polite expressions used in everyday conversations',
-    color: '#1D4ED8',
-    iconBg: '#EFF6FF',
-    duration: '4 min',
-    xp: 15,
-    done: false,
-    active: true,
-    signs: [
-      { letter: 'Thank You', hint: 'Flat hand moves forward from your chin, like blowing a kiss.' },
-      { letter: 'Please', hint: 'Open hand rubs a small circle on the chest.' },
-      { letter: 'Sorry', hint: 'Closed fist rubs a circle on the chest.' },
-      { letter: 'Welcome', hint: 'Open hand sweeps inward toward the body.' },
-    ],
-  },
-  {
-    id: 4,
     category: 'Numbers',
-    title: 'Numbers 1–5',
-    desc: 'Count from one to five in FSL',
+    title: 'Learn Numbers',
+    desc: 'Count from one to ten in FSL',
     color: '#6B7280',
     iconBg: '#F9FAFB',
     duration: '6 min',
     xp: 25,
     done: false,
+    active: true,
     signs: [
       { letter: '1', hint: 'Index finger points straight up.' },
       { letter: '2', hint: 'Index and middle fingers raised in a V shape.' },
       { letter: '3', hint: 'Thumb, index, and middle fingers extended.' },
       { letter: '4', hint: 'Four fingers extended, thumb folded across the palm.' },
       { letter: '5', hint: 'All five fingers spread open wide.' },
+      { letter: '6', hint: 'Pinky and thumb touch, other fingers extended up.' },
+      { letter: '7', hint: 'Ring, pinky, and thumb touch, other fingers extended up.' },
+      { letter: '8', hint: 'Middle, ring, pinky, and thumb touch, index extended up.' },
+      { letter: '9', hint: 'All fingers curled except index, which forms a hook.' },
+      { letter: '10', hint: 'Thumb touches the palm, other fingers extended up and shake.' },
     ],
   },
   {
-    id: 5,
-    category: 'Alphabet',
-    title: 'Letters F–J',
-    desc: 'Continue with the next 5 alphabet signs',
-    color: '#6B7280',
-    iconBg: '#F9FAFB',
+    id: 4,
+    category: 'Greetings',
+    title: 'Basic Greetings',
+    desc: 'Learn essential greetings like Hello, Good Morning, and Goodbye',
+    color: '#F2A400',
+    iconBg: '#FEF3C7',
     duration: '5 min',
     xp: 20,
     done: false,
     signs: [
-      { letter: 'F', hint: 'Index finger and thumb touch to form a circle, other fingers up.' },
-      { letter: 'G', hint: 'Index finger and thumb point sideways, parallel to the ground.' },
-      { letter: 'H', hint: 'Index and middle finger point sideways together, palm facing you.' },
-      { letter: 'I', hint: 'Pinky finger points up, all other fingers folded into a fist.' },
-      { letter: 'J', hint: 'Like I but trace a J shape in the air with your pinky.' },
+      { letter: 'Hello', hint: 'Open hand, fingers together, wave gently from the wrist.' },
+      { letter: 'Good Morning', hint: 'Flat hand moves from chin level upward like the rising sun.' },
+      { letter: 'Good Afternoon', hint: 'Flat hand moves from chin level slightly upward and outward.' },
+      { letter: 'Good Evening', hint: 'Flat hand moves from chin level downward and outward.' },
+      { letter: 'Goodbye', hint: 'Open hand raised, wave fingers down then back up.' },
+    ],
+  },
+  {
+    id: 5,
+    category: 'Introductions',
+    title: 'Introduction',
+    desc: 'Learn to introduce yourself and ask others their name',
+    color: '#5EC8FA',
+    iconBg: '#E0F2FE',
+    duration: '6 min',
+    xp: 25,
+    done: false,
+    signs: [
+      { letter: 'My Name', hint: 'Place flat palm on chest for "my" then sign "name".' },
+      { letter: 'Your Name', hint: 'Push flat palm forward for "your" then sign "name".' },
+      { letter: 'What', hint: 'Hold both hands up, palms facing up, and shake slightly.' },
+      { letter: 'Nice', hint: 'Place flat palm over other palm, slide forward smoothly.' },
+      { letter: 'Meet', hint: 'Bring index fingers together like two people meeting.' },
+      { letter: 'You', hint: 'Point index finger toward the person you are speaking to.' },
+      { letter: 'Nice to Meet You', hint: 'Combine Nice + Meet + You in sequence.' },
     ],
   },
   {
     id: 6,
-    category: 'Classroom',
-    title: 'Teacher & Student',
-    desc: 'Signs for classroom roles',
-    color: '#6B7280',
-    iconBg: '#F9FAFB',
-    duration: '7 min',
-    xp: 30,
+    category: 'Courtesy',
+    title: 'Courtesy',
+    desc: 'Learn polite phrases like Please, Thank You, and You\'re Welcome',
+    color: '#10B981',
+    iconBg: '#D1FAE5',
+    duration: '5 min',
+    xp: 20,
     done: false,
     signs: [
-      { letter: 'Teacher', hint: 'Both hands near temples, fingers spread — then move forward.' },
-      { letter: 'Student', hint: 'One hand like an open book, other hand traces reading.' },
-      { letter: 'School', hint: 'Clap hands together twice in a slightly formal motion.' },
-      { letter: 'Class', hint: 'Both hands circle outward in front of you.' },
+      { letter: 'Please', hint: 'Open palm rubs a small circle on the chest.' },
+      { letter: 'Thank You', hint: 'Flat hand moves forward from the chin, like blowing a kiss.' },
+      { letter: 'You\'re Welcome', hint: 'Open hand sweeps inward toward the body with a nod.' },
+      { letter: 'Yes', hint: 'Make an S fist and tilt it forward at the wrist twice.' },
+      { letter: 'No', hint: 'Snap index and middle fingers down against the thumb quickly.' },
+      { letter: 'Sorry', hint: 'Closed fist rubs a circle on the chest.' },
     ],
   },
   {
     id: 7,
-    category: 'Bonus',
-    title: 'Chest Challenge',
-    desc: 'Test everything you have learned in Unit 1 so far',
-    color: '#6B7280',
-    iconBg: '#F9FAFB',
+    category: 'Conversation',
+    title: 'Basic Conversation',
+    desc: 'Combine greetings, introductions, and courtesy into real conversations',
+    color: '#8B5CF6',
+    iconBg: '#EDE9FE',
     duration: '10 min',
-    xp: 50,
+    xp: 40,
     done: false,
-    isChest: true,
-    signs: [],
+    signs: [
+      { letter: 'Greeting', hint: 'Review and combine greeting signs.' },
+      { letter: 'Introduction', hint: 'Review and combine introduction signs.' },
+      { letter: 'Courtesy', hint: 'Review and combine courtesy signs.' },
+      { letter: 'Full Conversation', hint: 'Practice a complete conversation with all signs.' },
+    ],
   },
   {
     id: 8,
-    category: 'Exam',
+    category: 'Conversation',
     title: 'Unit Exam',
     desc: 'Prove your mastery and unlock Unit 2',
-    color: '#6B7280',
-    iconBg: '#F9FAFB',
+    color: '#8B5CF6',
+    iconBg: '#EDE9FE',
     duration: '12 min',
     xp: 100,
     done: false,
@@ -299,8 +330,12 @@ function CategoryIcon({ category, size = 22, color = '#fff' }: { category: strin
       return <NumbersIcon size={size} color={color} />;
     case 'Greetings':
       return <GreetingIcon size={size} color={color} />;
-    case 'Classroom':
-      return <ClassroomIcon size={size} color={color} />;
+    case 'Introductions':
+      return <Ionicons name="person-outline" size={size} color={color} />;
+    case 'Courtesy':
+      return <Ionicons name="heart-outline" size={size} color={color} />;
+    case 'Conversation':
+      return <ConversationIcon size={size} color={color} />;
     default:
       return null;
   }
@@ -453,15 +488,16 @@ export default function ExploreTab() {
     setPopupPos({ top, left, arrowLeft, arrowDir: showBelow ? 'top' : 'bottom' });
   }, [expandedId]);
 
+  // ── Handle Start Lesson ──
+  const handleStartLesson = (lesson: Lesson) => {
+    // Navigate to the Lessons screen
+    router.push('/screens/Lessons');
+  };
+
+  // If a lesson is open, navigate to Lessons screen
   if (openLesson) {
-    return (
-      <View style={styles.container}>
-        <Text>Lesson Detail View</Text>
-        <TouchableOpacity onPress={() => setOpenLesson(null)}>
-          <Text>Back</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    router.push('/screens/Lessons');
+    return null;
   }
 
   return (
@@ -563,7 +599,7 @@ export default function ExploreTab() {
               const cx = (pos.cx / 100) * 380;
               const cy = pos.cy;
               const isActive = !!lesson.active;
-              const isSpecial = !!(lesson.isChest || lesson.isExam);
+              const isSpecial = !!(lesson.isExam);
               const isDone = lesson.done;
               const isSelected = expandedId === lesson.id;
 
@@ -737,7 +773,7 @@ export default function ExploreTab() {
                   <G>
                     {/* Glow behind mascot */}
                     <Circle
-                      cx={onRight ? cx + 56 : cx - 56}
+                      cx={onRight ? cx + 90 : cx - 90}
                       cy={pos.cy}
                       r={40}
                       fill="rgba(255, 217, 61, 0.15)"
@@ -746,8 +782,8 @@ export default function ExploreTab() {
                       href={senya_logo}
                       x={onRight ? cx + 42 : cx - 94}
                       y={pos.cy - 50}
-                      width={56}
-                      height={56}
+                      width={100}
+                      height={100}
                       preserveAspectRatio="xMidYMid meet"
                     />
                   </G>
@@ -810,7 +846,7 @@ export default function ExploreTab() {
                     <TouchableOpacity
                       style={[styles.popupButton, !canOpen && styles.popupButtonLocked]}
                       disabled={!canOpen}
-                      onPress={() => canOpen && setOpenLesson(lesson)}
+                      onPress={() => canOpen && handleStartLesson(lesson)}
                     >
                       <Text style={[styles.popupButtonText, !canOpen && styles.popupButtonTextLocked]}>
                         {lesson.done ? 'Review' : canOpen ? 'Start' : 'Locked'}

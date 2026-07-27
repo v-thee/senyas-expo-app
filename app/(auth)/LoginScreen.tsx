@@ -28,7 +28,7 @@ const images = {
   senyaMagnify: require('@/assets/images/senya_magnify.png'),
 };
 
-const API_URL = "http://192.168.109.206/api/api.php?action=login";
+const API_URL = "http://192.168.34.206/api/api.php?action=login";
 
 interface Props {
   onLogin: () => void;
