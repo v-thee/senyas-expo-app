@@ -51,3 +51,92 @@ export const Fonts = Platform.select({
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
+
+/**
+ * SEÑAS — Design Tokens
+ * Spacing, typography, radii, and shadow presets
+ */
+
+export const Spacing = {
+  xs:  4,
+  sm:  8,
+  md:  16,
+  lg:  24,
+  xl:  32,
+  '2xl': 48,
+  '3xl': 64,
+} as const;
+
+export const Radius = {
+  sm:   8,
+  md:   16,
+  lg:   24,
+  xl:   32,
+  full: 9999,
+} as const;
+
+export const FontSize = {
+  xs:   11,
+  sm:   13,
+  base: 15,
+  md:   17,
+  lg:   20,
+  xl:   24,
+  '2xl': 28,
+  '3xl': 34,
+} as const;
+
+export const FontWeight = {
+  regular:   '400' as const,
+  medium:    '500' as const,
+  semibold:  '600' as const,
+  bold:      '700' as const,
+  extrabold: '800' as const,
+  black:     '900' as const,
+};
+
+/** Shadow presets — use with elevation on Android, shadowXxx on iOS */
+export const Shadow = {
+  sm: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  md: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  lg: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  teal: {
+    shadowColor: '#2eadad',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.30,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  amber: {
+    shadowColor: '#f5a800',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.30,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+} as const;
+
+export const Layout = {
+  screenPaddingH: 24,
+  screenPaddingV: 16,
+  bottomNavHeight: 84,
+  headerHeight: 96,
+} as const;
