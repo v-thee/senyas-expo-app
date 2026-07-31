@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated, Image, Modal, Dimensions, StatusBar, Platform
 } from 'react-native';
@@ -16,17 +16,126 @@ import Svg, {
 
 const { width, height } = Dimensions.get('window');
 
+// ── Design Tokens ──
+const C = {
+  deepBlue: '#152B6B',
+  royal: '#2647B8',
+  royalLight: '#3B5FE0',
+  sky: '#5EC8FA',
+  gold: '#FFC542',
+  goldDeep: '#F2A400',
+  streak: '#FF8A3D',
+  ink: '#101635',
+  slate: '#565E80',
+  slateLight: '#AEB4CE',
+  card: '#FFFFFF',
+  bg: '#EEF1FB',
+  statsZone: '#E7EEFF',
+  danger: '#EF4444',
+  border: '#DCE4FA',
+  success: '#10B981',
+  needsWork: '#F59E0B',
+};
+
+// ── Layout math for the bento grid ──
+const H_PADDING = 20;
+const CONTENT_WIDTH = width - H_PADDING * 2;
+const LARGE_GAP = 14;
+const SMALL_GAP = 10;
+const LARGE_CARD_WIDTH = (CONTENT_WIDTH - LARGE_GAP) / 2;
+const SMALL_CARD_WIDTH = (CONTENT_WIDTH - SMALL_GAP * 2) / 3;
+
 // ── Import assets ──
 const images = {
   senyaTeaching: require('@/assets/images/senya_teaching.png'),
   senyaBlue: require('@/assets/images/senya_blue.png'),
   streak: require('@/assets/images/streak.png'),
   scoreTrophy: require('@/assets/images/score_trophy.png'),
+  senyasLogo: require('@/assets/images/senyas_logo.png'),
+  alphabet: require('@/assets/images/alphabet.png'),
+  numbers: require('@/assets/images/numbers.png'),
+  greetings: require('@/assets/images/greet.png'),
+  words: require('@/assets/images/multiple_choice.png'),
+  sentences: require('@/assets/images/dragNdrop.png'),
+  badges: require('@/assets/images/badges.png'),
+  book: require('@/assets/images/book.png'),
 };
 
-// ══════════════════════════════════════════════════════════
-// GLASS CARD — layered blur + sheen highlight + optional glow
-// ══════════════════════════════════════════════════════════
+// ── Icons ──
+function ArrowLeft({ size = 24, color = '#2647B8' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M19 12H5M12 19l-7-7 7-7" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function SparkleIcon({ size = 14, color = '#F59E0B' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" fill={color} opacity="0.8" />
+      <Path d="M19 4L19.5 6.5L22 7L19.5 7.5L19 10L18.5 7.5L16 7L18.5 6.5L19 4Z" fill={color} opacity="0.5" />
+      <Path d="M5 14L5.5 16.5L8 17L5.5 17.5L5 20L4.5 17.5L2 17L4.5 16.5L5 14Z" fill={color} opacity="0.5" />
+    </Svg>
+  );
+}
+
+function CheckCircle({ size = 24, color = '#10B981' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={2} fill={color + '18'} />
+      <Path d="M7 12l3 3 7-7" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function Trophy({ size = 24, color = '#FFC542' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 3h12v4a6 6 0 01-12 0V3z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M12 13v8M8 21h8" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M18 7a6 6 0 01-12 0M6 3v5a6 6 0 0012 0V3" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function Clock({ size = 20, color = '#6B7492' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="10" stroke={color} strokeWidth={2} />
+      <Path d="M12 6v6l4 2" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function BookOpenIcon({ size = 18, color = '#1E3A8A' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function ArrowRight({ size = 20, color = '#fff' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M5 12h14M12 5l7 7-7 7" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function TargetIcon({ size = 16, color = '#fff' }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={2} />
+      <Circle cx="12" cy="12" r="5" stroke={color} strokeWidth={2} />
+      <Circle cx="12" cy="12" r="1.5" fill={color} />
+    </Svg>
+  );
+}
+
+// ── Glass Card ──
 function GlassCard({
   children,
   style,
@@ -71,9 +180,7 @@ function GlassCard({
   );
 }
 
-// ══════════════════════════════════════════════════════════
-// PRESSY — animated scale-down wrapper for tactile interactions
-// ══════════════════════════════════════════════════════════
+// ── Pressy ──
 function Pressy({
   children,
   onPress,
@@ -111,160 +218,6 @@ function Pressy({
   );
 }
 
-// ══════════════════════════════════════════════════════════
-// ICONS — every icon in the app is drawn, never emoji
-// ══════════════════════════════════════════════════════════
-const SparkleIcon = ({ size = 14, color = '#F59E0B' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" fill={color} opacity="0.8" />
-    <Path d="M19 4L19.5 6.5L22 7L19.5 7.5L19 10L18.5 7.5L16 7L18.5 6.5L19 4Z" fill={color} opacity="0.5" />
-    <Path d="M5 14L5.5 16.5L8 17L5.5 17.5L5 20L4.5 17.5L2 17L4.5 16.5L5 14Z" fill={color} opacity="0.5" />
-  </Svg>
-);
-
-const BellIcon = ({ size = 18, color = '#1E3A8A' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M13.73 21a2 2 0 0 1-3.46 0" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const InfoIcon = ({ size = 18, color = '#1E3A8A' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Circle cx="12" cy="12" r="9" stroke={color} strokeWidth={2} />
-    <Path d="M12 8v4M12 16h.01" stroke={color} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-
-const ArrowRightIcon = ({ size = 16, color = '#1E3A8A' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M5 12h14M12 5l7 7-7 7" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const CameraIcon = ({ size = 20, color = '#FFFFFF' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Circle cx="12" cy="13" r="4" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const CheckIcon = ({ size = 20, color = '#22C55E' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M20 6L9 17l-5-5" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-const XIcon = ({ size = 20, color = '#EF4444' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Line x1="18" y1="6" x2="6" y2="18" stroke={color} strokeWidth={3} strokeLinecap="round" />
-    <Line x1="6" y1="6" x2="18" y2="18" stroke={color} strokeWidth={3} strokeLinecap="round" />
-  </Svg>
-);
-
-const LockIcon = ({ size = 16, color = '#9CA3AF' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke={color} strokeWidth={2} />
-    <Path d="M7 11V7a5 5 0 0 1 10 0v4" stroke={color} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-
-const BulbIcon = ({ size = 24, color = '#F59E0B' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-      stroke={color}
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Svg>
-);
-
-const StarIcon = ({ size = 24, color = '#F59E0B', filled = true }: { size?: number; color?: string; filled?: boolean }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-      stroke={color}
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      fill={filled ? color : 'none'}
-      opacity={filled ? 1 : 0.3}
-    />
-  </Svg>
-);
-
-// letterform "A" — used for the Alphabet category
-const LetterGlyphIcon = ({ size = 24, color = '#2563EB' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M12 4.5L6.5 19.5M12 4.5l5.5 15M8.7 14.5h6.6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-// hash / grid — used for the Numbers category
-const HashIcon = ({ size = 24, color = '#2563EB' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M9.5 4L7 20M17 4l-2.5 16M4 9h16M3.2 15h16" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
-// open raised hand — used for the Words category and gesture accents
-const HandIcon = ({ size = 24, color = '#2563EB' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path
-      d="M7.2 11.2V5.6a1.4 1.4 0 0 1 2.8 0v4.7M10 10.1V4.4a1.4 1.4 0 0 1 2.8 0V10M12.8 10.4V5.6a1.4 1.4 0 0 1 2.8 0v7.6M15.6 12.4v-2.6a1.4 1.4 0 0 1 2.8 0v5.7c0 3.3-2.35 5.7-5.65 5.7h-.9c-1.9 0-2.85-.55-4-1.9L5.2 16c-.65-.85-.45-1.95.4-2.35.65-.3 1.4-.1 1.9.45l1.5 1.65"
-      stroke={color}
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </Svg>
-);
-
-// speech bubble — used for the Sentences category
-const ChatIcon = ({ size = 24, color = '#2563EB' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M4 5.5h13a2.3 2.3 0 0 1 2.3 2.3v6a2.3 2.3 0 0 1-2.3 2.3H10.3L6 19v-3H4a2.3 2.3 0 0 1-2.3-2.3v-6A2.3 2.3 0 0 1 4 5.5z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-    <Circle cx="7.6" cy="10.2" r="0.9" fill={color} />
-    <Circle cx="11.5" cy="10.2" r="0.9" fill={color} />
-    <Circle cx="15.4" cy="10.2" r="0.9" fill={color} />
-  </Svg>
-);
-
-// medal — used for class-ranking tiers
-const MedalIcon = ({ size = 24, color = '#F59E0B' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M8.6 3.2L5.6 8.4l3.1 1.9M15.4 3.2l3 5.2-3.1 1.9" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-    <Circle cx="12" cy="14.2" r="6.3" stroke={color} strokeWidth={1.8} />
-    <Path d="M12 10.6l1.15 2.35 2.55.4-1.85 1.8.45 2.55-2.3-1.2-2.3 1.2.45-2.55-1.85-1.8 2.55-.4L12 10.6z" fill={color} />
-  </Svg>
-);
-
-// open book — used for the "beginner" ranking tier
-const BookIcon = ({ size = 24, color = '#6B7280' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M4 5.8A2.4 2.4 0 0 1 6.4 3.4H12v16.2H6.4A2.4 2.4 0 0 0 4 22V5.8z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-    <Path d="M20 5.8A2.4 2.4 0 0 0 17.6 3.4H12v16.2h5.6A2.4 2.4 0 0 1 20 22V5.8z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-  </Svg>
-);
-
-// retry / loop arrows — replaces encouragement emoji
-const RepeatIcon = ({ size = 24, color = '#FFFFFF' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M4 4.5v5h5M20 19.5v-5h-5" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    <Path d="M4.7 14.5A8 8 0 0 0 19 9M19.3 9.5A8 8 0 0 0 5 15" stroke={color} strokeWidth={2} strokeLinecap="round" />
-  </Svg>
-);
-
-const TrophyIcon = ({ size = 24, color = '#F59E0B' }: { size?: number; color?: string }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Path d="M7 4h10v5a5 5 0 0 1-10 0V4z" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />
-    <Path d="M7 5.5H4.5A2.5 2.5 0 0 0 5 10.4M17 5.5h2.5A2.5 2.5 0 0 1 19 10.4" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    <Path d="M12 14v3.5M9 21h6M9.5 17.5h5l.6 2A1 1 0 0 1 14.15 21H9.85a1 1 0 0 1-.95-1.5l.6-2z" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-  </Svg>
-);
-
 // ── Types ──
 type ScreenState = 'home' | 'gesture' | 'scoreboard';
 
@@ -275,30 +228,103 @@ interface Lesson {
   progress: number;
   locked: boolean;
   category: 'Alphabet' | 'Numbers' | 'Words' | 'Sentences';
+  icon: any;
+  color: string;
+  bgColor: string;
+  variant: 'large' | 'small';
 }
 
 // ── Lesson Data ──
 const LESSONS: Lesson[] = [
-  { id: 1, title: 'Alphabet', subtitle: 'Fingerspelling A-Z', progress: 20, locked: false, category: 'Alphabet' },
-  { id: 2, title: 'Numbers', subtitle: 'Counting 1-100', progress: 1, locked: false, category: 'Numbers' },
-  { id: 3, title: 'Basic Words', subtitle: 'Common signs', progress: 0, locked: true, category: 'Words' },
-  { id: 4, title: 'Sentences', subtitle: 'Full phrases', progress: 0, locked: true, category: 'Sentences' },
+  { 
+    id: 1, 
+    title: 'Alphabet', 
+    subtitle: 'Fingerspelling A-Z', 
+    progress: 20, 
+    locked: false, 
+    category: 'Alphabet',
+    icon: images.alphabet,
+    color: '#2647B8',
+    bgColor: '#2647B822',
+    variant: 'large'
+  },
+  { 
+    id: 2, 
+    title: 'Numbers', 
+    subtitle: 'Counting 1-100', 
+    progress: 1, 
+    locked: false, 
+    category: 'Numbers',
+    icon: images.numbers,
+    color: '#16A34A',
+    bgColor: 'rgba(22, 163, 74, 0.15)',
+    variant: 'large'
+  },
+  { 
+    id: 3, 
+    title: 'Basic Words', 
+    subtitle: 'Common signs', 
+    progress: 0, 
+    locked: true, 
+    category: 'Words',
+    icon: images.words,
+    color: '#7C3AED',
+    bgColor: 'rgba(124, 58, 237, 0.15)',
+    variant: 'small'
+  },
+  { 
+    id: 4, 
+    title: 'Sentences', 
+    subtitle: 'Full phrases', 
+    progress: 0, 
+    locked: true, 
+    category: 'Sentences',
+    icon: images.sentences,
+    color: '#F59E0B',
+    bgColor: 'rgba(245, 158, 11, 0.15)',
+    variant: 'small'
+  },
+  { 
+    id: 5, 
+    title: 'Greetings', 
+    subtitle: 'Common greetings', 
+    progress: 0, 
+    locked: true, 
+    category: 'Words',
+    icon: images.greetings,
+    color: '#5EC8FA',
+    bgColor: 'rgba(94, 200, 250, 0.15)',
+    variant: 'small'
+  },
 ];
 
-function LessonIcon({ category, size = 24, color = '#2563EB' }: { category: Lesson['category']; size?: number; color?: string }) {
-  switch (category) {
-    case 'Alphabet':
-      return <LetterGlyphIcon size={size} color={color} />;
-    case 'Numbers':
-      return <HashIcon size={size} color={color} />;
-    case 'Words':
-      return <HandIcon size={size} color={color} />;
-    case 'Sentences':
-      return <ChatIcon size={size} color={color} />;
-    default:
-      return null;
-  }
+// ── Student Ranking ──
+interface StudentRank {
+  id: number;
+  name: string;
+  score: number;
+  time: number; // seconds
 }
+
+// Sample classmates used to populate the leaderboard alongside the current
+// user's live result. In a real build this would come from the same
+// getRankings-style API call used in QuizMC.
+const SAMPLE_CLASSMATES: Omit<StudentRank, 'id'>[] = [
+  { name: 'Mica Danah Paris', score: 5, time: 33 },
+  { name: 'Samuel Pascual', score: 5, time: 40 },
+];
+
+const buildRankings = (userScore: number, userTime: number): StudentRank[] => {
+  const rows: StudentRank[] = [
+    ...SAMPLE_CLASSMATES.map((s, i) => ({ id: i + 1, ...s })),
+    { id: 999, name: 'You', score: userScore, time: userTime || 1 },
+  ];
+
+  return rows.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.time - b.time;
+  });
+};
 
 // ── Gesture Signs ──
 const GESTURE_SIGNS = [
@@ -309,23 +335,31 @@ const GESTURE_SIGNS = [
   { sign: 'E', hint: 'All fingers curl down toward the palm with thumb tucked under.' },
 ];
 
-// ══════════════════════════════════════════════════════════
-// SCOREBOARD SCREEN
-// ══════════════════════════════════════════════════════════
+// ── Scoreboard Screen ──
 function ScoreboardScreen({
   score,
   total,
+  time,
   onContinue,
 }: {
   score: number;
   total: number;
+  time: number;
   onContinue: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const rankings = useMemo(() => buildRankings(score, time), [score, time]);
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s`;
+  };
   const scaleAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const starAnimations = useRef([...Array(3)].map(() => new Animated.Value(0))).current;
   const trophyPulse = useRef(new Animated.Value(1)).current;
+
+  const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -354,23 +388,31 @@ function ScoreboardScreen({
   }, []);
 
   const percentage = Math.round((score / total) * 100);
-  const starsEarned = Math.ceil((score / total) * 3);
-
-  const tier =
-    percentage >= 90 ? 'gold' : percentage >= 70 ? 'silver' : percentage >= 50 ? 'bronze' : 'beginner';
-
-  const rankColor =
-    tier === 'gold' ? '#F59E0B' : tier === 'silver' ? '#9CA3AF' : tier === 'bronze' ? '#CD7F32' : '#6B7280';
+  const tier = percentage >= 90 ? 'gold' : percentage >= 70 ? 'silver' : percentage >= 50 ? 'bronze' : 'beginner';
+  const rankColor = tier === 'gold' ? '#F59E0B' : tier === 'silver' ? '#9CA3AF' : tier === 'bronze' ? '#CD7F32' : '#6B7280';
   const rankLabel = tier === 'gold' ? 'Gold' : tier === 'silver' ? 'Silver' : tier === 'bronze' ? 'Bronze' : 'Beginner';
 
-  const perf =
-    percentage >= 90
-      ? { icon: <StarIcon size={20} color="#F59E0B" />, text: 'Excellent Work' }
-      : percentage >= 70
-      ? { icon: <CheckIcon size={20} color="#22C55E" />, text: 'Great Job' }
-      : percentage >= 50
-      ? { icon: <RepeatIcon size={20} color="#60A5FA" />, text: 'Keep Going' }
-      : { icon: <BookIcon size={20} color="#9CA3AF" />, text: 'Practice More' };
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: percentage / 100,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
+  }, [percentage]);
+
+  const getMessage = () => {
+    if (percentage >= 90) return '🌟 Excellent Work!';
+    if (percentage >= 70) return '👏 Great Job!';
+    if (percentage >= 50) return '💪 Keep Going!';
+    return '📚 Practice More!';
+  };
+
+  const getSubtext = () => {
+    if (percentage >= 90) return 'Top of the class! 🏆';
+    if (percentage >= 70) return 'Great progress — keep it up! 🚀';
+    if (percentage >= 50) return "You're getting there! 💪";
+    return 'Keep practicing to improve! 📖';
+  };
 
   return (
     <View style={styles.scoreboardContainer}>
@@ -380,11 +422,14 @@ function ScoreboardScreen({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      {/* ambient glow orbs for depth */}
       <View style={[styles.ambientOrb, { top: -60, left: -40, backgroundColor: 'rgba(245,158,11,0.18)' }]} />
       <View style={[styles.ambientOrb, { bottom: -80, right: -60, backgroundColor: 'rgba(255,255,255,0.1)' }]} />
 
-      <View style={[styles.scoreboardContent, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }]}>
+      <ScrollView
+        style={styles.scoreboardScrollView}
+        contentContainerStyle={[styles.scoreboardContent, { paddingTop: insets.top + 40, paddingBottom: insets.bottom + 40 }]}
+        showsVerticalScrollIndicator={false}
+      >
         <Animated.View style={[styles.scoreboardCard, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
           <GlassCard style={styles.scoreboardGlass} intensity={30} glow glowColor="#F59E0B">
             <Animated.View style={{ transform: [{ scale: trophyPulse }] }}>
@@ -412,39 +457,36 @@ function ScoreboardScreen({
                     ],
                   }}
                 >
-                  <StarIcon size={40} color="#F59E0B" filled={i < starsEarned} />
+                  <Svg width={40} height={40} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                      stroke="#F59E0B"
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill={i < Math.ceil((score / total) * 3) ? '#F59E0B' : 'none'}
+                      opacity={i < Math.ceil((score / total) * 3) ? 1 : 0.3}
+                    />
+                  </Svg>
                 </Animated.View>
               ))}
             </View>
 
             <View style={styles.performanceRow}>
-              {perf.icon}
-              <Text style={styles.performanceMessage}>{perf.text}</Text>
+              <Text style={styles.performanceMessage}>{getMessage()}</Text>
             </View>
 
             <View style={styles.rankingContainer}>
               <View style={styles.rankingHeader}>
-                <TrophyIcon size={16} color="#FFFFFF" />
-                <Text style={styles.rankingTitle}>Class Ranking</Text>
+                <Trophy size={16} color="#FFFFFF" />
+                <Text style={styles.rankingTitle}>🏆 Student Rankings</Text>
               </View>
+              
               <View style={styles.rankingRow}>
                 <View style={[styles.rankingBadge, { backgroundColor: rankColor + '20', borderColor: rankColor }]}>
-                  {tier === 'beginner' ? (
-                    <BookIcon size={14} color={rankColor} />
-                  ) : (
-                    <MedalIcon size={14} color={rankColor} />
-                  )}
                   <Text style={[styles.rankingBadgeText, { color: rankColor }]}>{rankLabel}</Text>
                 </View>
-                <Text style={styles.rankingSubtext}>
-                  {percentage >= 90
-                    ? 'Top of the class!'
-                    : percentage >= 70
-                    ? 'Great progress — keep it up!'
-                    : percentage >= 50
-                    ? "You're getting there!"
-                    : 'Keep practicing to improve!'}
-                </Text>
+                <Text style={styles.rankingSubtext}>{getSubtext()}</Text>
               </View>
 
               <View style={styles.rankProgressContainer}>
@@ -453,14 +495,52 @@ function ScoreboardScreen({
                     style={[
                       styles.rankProgressFill,
                       {
-                        width: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', `${percentage}%`] }),
                         backgroundColor: rankColor,
+                        transform: [{ scaleX: progressAnim }],
                       },
                     ]}
                   />
                 </View>
-                <Text style={styles.rankProgressText}>{percentage}% to next rank</Text>
+                <Text style={styles.rankProgressText}>{percentage}%</Text>
               </View>
+
+              {/* Leaderboard — ranked by score, then by time answered */}
+              <View style={styles.rankListHeader}>
+                <Text style={[styles.rankListHeaderText, { width: 50 }]}>#</Text>
+                <Text style={[styles.rankListHeaderText, { flex: 1 }]}>Name</Text>
+                <Text style={[styles.rankListHeaderText, { width: 60 }]}>Score</Text>
+                <Text style={[styles.rankListHeaderText, { width: 70 }]}>Time</Text>
+              </View>
+
+              {rankings.slice(0, 10).map((student, index) => {
+                const isUser = student.name === 'You';
+                const rankNumber = index + 1;
+                const medalEmoji = rankNumber === 1 ? '🥇' : rankNumber === 2 ? '🥈' : rankNumber === 3 ? '🥉' : `#${rankNumber}`;
+
+                return (
+                  <View
+                    key={student.id}
+                    style={[
+                      styles.rankListItem,
+                      rankNumber <= 3 && styles.topRankItem,
+                      isUser && styles.userRankItem,
+                    ]}
+                  >
+                    <Text style={[styles.rankListPosition, isUser && styles.userRankText, rankNumber <= 3 && styles.topRankText]}>
+                      {medalEmoji}
+                    </Text>
+                    <Text style={[styles.rankListName, isUser && styles.userRankText, rankNumber <= 3 && styles.topRankText]} numberOfLines={1}>
+                      {student.name} {isUser && '(You)'}
+                    </Text>
+                    <Text style={[styles.rankListScore, isUser && styles.userRankText, rankNumber <= 3 && styles.topRankText]}>
+                      {student.score}/{total}
+                    </Text>
+                    <Text style={[styles.rankListTime, isUser && styles.userRankText, rankNumber <= 3 && styles.topRankText]}>
+                      {formatTime(student.time)}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
 
             <Pressy onPress={onContinue} style={styles.scoreboardContinueBtn}>
@@ -471,19 +551,17 @@ function ScoreboardScreen({
                 end={{ x: 1, y: 1 }}
               >
                 <Text style={styles.scoreboardContinueText}>Continue Learning</Text>
-                <ArrowRightIcon size={18} color="#FFFFFF" />
+                <ArrowRight size={18} color="#FFFFFF" />
               </LinearGradient>
             </Pressy>
           </GlassCard>
         </Animated.View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
-// ══════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ══════════════════════════════════════════════════════════
+// ── Main Component ──
 export default function PracticeTab() {
   const insets = useSafeAreaInsets();
   const [screen, setScreen] = useState<ScreenState>('home');
@@ -495,6 +573,8 @@ export default function PracticeTab() {
   const [showFullScreenResult, setShowFullScreenResult] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [timeSpent, setTimeSpent] = useState(0);
+  const practiceStartTime = useRef<number | null>(null);
 
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showCameraModal, setShowCameraModal] = useState(false);
@@ -509,11 +589,8 @@ export default function PracticeTab() {
   const senyaFloat = useRef(new Animated.Value(0)).current;
   const autoDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // entrance choreography for the home lesson list
   const lessonAnims = useRef(LESSONS.map(() => new Animated.Value(0))).current;
   const heroAnim = useRef(new Animated.Value(0)).current;
-
-  // ambient glow pulse behind the "Start Detection" button
   const ctaGlow = useRef(new Animated.Value(0)).current;
 
   const sign = GESTURE_SIGNS[currentSignIndex];
@@ -579,6 +656,10 @@ export default function PracticeTab() {
       if (phase === 'success') {
         autoDismissTimer.current = setTimeout(() => {
           if (currentSignIndex >= GESTURE_SIGNS.length - 1) {
+            const elapsed = practiceStartTime.current
+              ? Math.max(1, Math.round((Date.now() - practiceStartTime.current) / 1000))
+              : 0;
+            setTimeSpent(elapsed);
             setScreen('scoreboard');
             setShowFullScreenResult(false);
           } else {
@@ -659,6 +740,8 @@ export default function PracticeTab() {
     setShowCameraModal(false);
     setShowHint(false);
     setFeedbackMessage('');
+    setTimeSpent(0);
+    practiceStartTime.current = null;
     if (autoDismissTimer.current) {
       clearTimeout(autoDismissTimer.current);
     }
@@ -680,21 +763,126 @@ export default function PracticeTab() {
       const result = await requestPermission();
       if (result.granted) {
         setShowCameraModal(false);
+        practiceStartTime.current = Date.now();
         setScreen('gesture');
       }
     } else {
       setShowCameraModal(false);
+      practiceStartTime.current = Date.now();
       setScreen('gesture');
     }
   };
 
-  // ── Scoreboard Screen ──
-  if (screen === 'scoreboard') {
-    return <ScoreboardScreen score={score} total={GESTURE_SIGNS.length} onContinue={resetPractice} />;
-  }
+  const renderLargeCard = (lesson: Lesson, index: number) => {
+    const isLocked = lesson.locked;
+    return (
+      <Animated.View 
+        key={lesson.id}
+        style={[
+          { width: LARGE_CARD_WIDTH },
+          {
+            opacity: lessonAnims[index],
+            transform: [{ translateY: lessonAnims[index].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
+          }
+        ]}
+      >
+        <Pressy onPress={() => handleLessonSelect(lesson)} disabled={isLocked} scaleTo={0.98}>
+          <GlassCard style={[styles.largeCard, { borderColor: isLocked ? '#DCE4FA' : lesson.color + '55' }]} intensity={30}>
+            <LinearGradient
+              colors={isLocked ? ['rgba(220,228,250,0.1)', 'rgba(255,255,255,0.25)'] : [lesson.bgColor, 'rgba(255,255,255,0.25)']}
+              style={styles.largeCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              {!isLocked && lesson.progress > 0 && (
+                <View style={styles.largeCardCheck}>
+                  <Text style={styles.largeCardProgress}>{lesson.progress}%</Text>
+                </View>
+              )}
+              <View style={[styles.largeIconContainer, { backgroundColor: isLocked ? '#DCE4FA' : lesson.bgColor }]}>
+                <Image source={lesson.icon} style={[styles.largeIcon, { opacity: isLocked ? 0.4 : 1 }]} resizeMode="contain" />
+              </View>
+              <Text style={[styles.largeCardTitle, { color: isLocked ? '#AEB4CE' : lesson.color }]}>{lesson.title}</Text>
+              <Text style={[styles.largeCardDescription, { color: isLocked ? '#AEB4CE' : '#565E80' }]} numberOfLines={2}>
+                {lesson.subtitle}
+              </Text>
+              <View style={styles.largeCardFooter}>
+                <View style={styles.largeCardMeta}>
+                  {isLocked ? (
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                      <Rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke="#AEB4CE" strokeWidth={2} />
+                      <Path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#AEB4CE" strokeWidth={2} strokeLinecap="round" />
+                    </Svg>
+                  ) : (
+                    <Clock size={12} color="#565E80" />
+                  )}
+                  <Text style={[styles.largeCardMetaText, { color: isLocked ? '#AEB4CE' : '#565E80' }]}>
+                    {isLocked ? 'Locked' : `${lesson.progress}% done`}
+                  </Text>
+                </View>
+                {!isLocked && (
+                  <View style={[styles.largeCardArrow, { backgroundColor: lesson.color }]}>
+                    <ArrowRight size={14} color="#fff" />
+                  </View>
+                )}
+              </View>
+            </LinearGradient>
+          </GlassCard>
+        </Pressy>
+      </Animated.View>
+    );
+  };
+
+  const renderSmallCard = (lesson: Lesson, index: number) => {
+    const isLocked = lesson.locked;
+    return (
+      <Animated.View 
+        key={lesson.id}
+        style={[
+          { width: SMALL_CARD_WIDTH },
+          {
+            opacity: lessonAnims[index],
+            transform: [{ translateY: lessonAnims[index].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
+          }
+        ]}
+      >
+        <Pressy onPress={() => handleLessonSelect(lesson)} disabled={isLocked} scaleTo={0.98}>
+          <GlassCard style={[styles.smallCard, { borderColor: isLocked ? '#DCE4FA' : lesson.color + '40' }]} intensity={30}>
+            <View style={styles.smallCardInner}>
+              {isLocked && (
+                <View style={styles.smallCardLock}>
+                  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                    <Rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke="#AEB4CE" strokeWidth={2} />
+                    <Path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#AEB4CE" strokeWidth={2} strokeLinecap="round" />
+                  </Svg>
+                </View>
+              )}
+              {!isLocked && lesson.progress > 0 && (
+                <View style={styles.smallCardProgress}>
+                  <Text style={styles.smallCardProgressText}>{lesson.progress}%</Text>
+                </View>
+              )}
+              <View style={[styles.smallIconContainer, { backgroundColor: isLocked ? '#DCE4FA' : lesson.bgColor }]}>
+                <Image source={lesson.icon} style={[styles.smallIcon, { opacity: isLocked ? 0.4 : 1 }]} resizeMode="contain" />
+              </View>
+              <Text style={[styles.smallCardTitle, { color: isLocked ? '#AEB4CE' : lesson.color }]} numberOfLines={1}>
+                {lesson.title}
+              </Text>
+              <Text style={[styles.smallCardMetaText, { color: isLocked ? '#AEB4CE' : '#565E80' }]}>
+                {isLocked ? 'Locked' : `${lesson.progress}%`}
+              </Text>
+            </View>
+          </GlassCard>
+        </Pressy>
+      </Animated.View>
+    );
+  };
 
   // ── Home Screen ──
   if (screen === 'home') {
+    const largeLessons = LESSONS.filter(l => l.variant === 'large');
+    const smallLessons = LESSONS.filter(l => l.variant === 'small');
+
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#BFE0F7" />
@@ -705,8 +893,12 @@ export default function PracticeTab() {
           start={{ x: 0, y: 0 }}
           end={{ x: 0, y: 1 }}
         />
-        <View style={[styles.ambientOrb, { top: -40, right: -50, backgroundColor: 'rgba(37,99,235,0.10)' }]} />
-        <View style={[styles.ambientOrb, { top: 320, left: -70, backgroundColor: 'rgba(245,158,11,0.08)' }]} />
+        
+        <View style={styles.blobContainer}>
+          <View style={[styles.blob, styles.blob1]} />
+          <View style={[styles.blob, styles.blob2]} />
+          <View style={[styles.blob, styles.blob3]} />
+        </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -714,22 +906,15 @@ export default function PracticeTab() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Text style={styles.brandText}>SEÑAS</Text>
-              <SparkleIcon size={16} color="#F59E0B" />
+            <View style={styles.headerTitleContainer}>
+              <Image source={images.senyasLogo} style={styles.headerMascot} resizeMode="contain" />
+              <Text style={styles.pageTitle}>Practice</Text>
             </View>
             <View style={styles.headerRight}>
-              <Pressy style={styles.iconCircle} scaleTo={0.88}>
-                <InfoIcon size={17} color="#1E3A8A" />
-              </Pressy>
               <View style={styles.streakPill}>
                 <Image source={images.streak} style={styles.streakPillIcon} resizeMode="contain" />
                 <Text style={styles.streakPillText}>5</Text>
               </View>
-              <Pressy style={styles.iconCircle} scaleTo={0.88}>
-                <BellIcon size={17} color="#1E3A8A" />
-                <View style={styles.notifDot} />
-              </Pressy>
             </View>
           </View>
 
@@ -747,7 +932,15 @@ export default function PracticeTab() {
                   <Text style={styles.heroTitle}>Practice your hand signs!</Text>
                   <View style={styles.heroTipRow}>
                     <View style={styles.heroTipIconWrap}>
-                      <BulbIcon size={13} color="#F59E0B" />
+                      <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+                        <Path
+                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                          stroke="#F59E0B"
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </Svg>
                     </View>
                     <Text style={styles.heroSub}>5 minutes daily beats one long session. Consistency is key!</Text>
                   </View>
@@ -757,50 +950,59 @@ export default function PracticeTab() {
             </GlassCard>
           </Animated.View>
 
-          {/* Choose Category */}
-          <Text style={styles.sectionTitle}>Choose a category:</Text>
+          {/* Stats Strip */}
+          <View style={styles.statsRow}>
+            <View style={styles.statPill}>
+              <BookOpenIcon size={16} color={C.royal} />
+              <Text style={styles.statValue}>{LESSONS.length}</Text>
+              <Text style={styles.statLabel}>Topics</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPill}>
+              <TargetIcon size={16} color={C.goldDeep} />
+              <Text style={styles.statValue}>5</Text>
+              <Text style={styles.statLabel}>Signs to learn</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPill}>
+              <Trophy size={16} color={C.success} />
+              <Text style={styles.statValue}>{LESSONS.filter(l => !l.locked).length}/{LESSONS.length}</Text>
+              <Text style={styles.statLabel}>Available</Text>
+            </View>
+          </View>
 
-          {/* Lessons List */}
-          {LESSONS.map((lesson, idx) => (
-            <Animated.View
-              key={lesson.id}
-              style={{
-                opacity: lessonAnims[idx],
-                transform: [{ translateY: lessonAnims[idx].interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
-              }}
-            >
-              <Pressy onPress={() => handleLessonSelect(lesson)} disabled={lesson.locked} scaleTo={0.98}>
-                <GlassCard style={[styles.lessonCard, lesson.locked && styles.lessonCardLocked]} intensity={35}>
-                  <View style={styles.lessonCardLeft}>
-                    <View style={[styles.lessonIconContainer, lesson.locked && styles.lessonIconContainerLocked]}>
-                      <LessonIcon category={lesson.category} size={22} color={lesson.locked ? '#9CA3AF' : '#2563EB'} />
-                    </View>
-                    <View style={styles.lessonInfo}>
-                      <View style={styles.lessonTitleRow}>
-                        <Text style={[styles.lessonTitle, lesson.locked && styles.lessonTitleLocked]}>{lesson.title}</Text>
-                        {lesson.locked && <LockIcon size={14} color="#9CA3AF" />}
-                      </View>
-                      <Text style={[styles.lessonSubtitle, lesson.locked && styles.lessonSubtitleLocked]}>{lesson.subtitle}</Text>
-                      {!lesson.locked && (
-                        <View style={styles.lessonProgressContainer}>
-                          <View style={styles.lessonProgressBar}>
-                            <View style={[styles.lessonProgressFill, { width: `${lesson.progress}%` }]} />
-                          </View>
-                          <Text style={styles.lessonProgressText}>{lesson.progress}% complete</Text>
-                        </View>
-                      )}
-                      {lesson.locked && <Text style={styles.lessonLockedText}>Complete previous lesson</Text>}
-                    </View>
-                  </View>
-                  {!lesson.locked && (
-                    <View style={styles.lessonArrow}>
-                      <ArrowRightIcon size={18} color="#2563EB" />
-                    </View>
-                  )}
-                </GlassCard>
-              </Pressy>
-            </Animated.View>
-          ))}
+          {/* Large Cards Row */}
+          <View style={styles.sectionLabelRow}>
+            <View style={[styles.sectionLabelBar, { backgroundColor: C.royal }]} />
+            <Text style={styles.sectionLabelText}>Available Lessons</Text>
+          </View>
+
+          <View style={styles.largeRow}>
+            {largeLessons.map((lesson, idx) => renderLargeCard(lesson, idx))}
+          </View>
+
+          {/* Small Cards Row */}
+          <View style={styles.sectionLabelRow}>
+            <View style={[styles.sectionLabelBar, { backgroundColor: C.success }]} />
+            <Text style={styles.sectionLabelText}>More Topics</Text>
+          </View>
+
+          <View style={styles.smallRow}>
+            {smallLessons.map((lesson, idx) => renderSmallCard(lesson, largeLessons.length + idx))}
+          </View>
+
+          {/* Tip Card */}
+          <GlassCard style={styles.tipCard} intensity={30}>
+            <View style={styles.tipContent}>
+              <Trophy size={22} color={C.gold} />
+              <View style={styles.tipTextContainer}>
+                <Text style={styles.tipTitle}>Practice Tip</Text>
+                <Text style={styles.tipDescription}>
+                  Don't rush — focus on getting each sign right before moving to the next one.
+                </Text>
+              </View>
+            </View>
+          </GlassCard>
         </ScrollView>
 
         {/* Terms Modal */}
@@ -838,7 +1040,10 @@ export default function PracticeTab() {
               <GlassCard style={styles.modalCard} intensity={55}>
                 <View style={styles.cameraModalIconContainer}>
                   <View style={styles.cameraModalIconCircle}>
-                    <CameraIcon size={34} color="#2563EB" />
+                    <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
+                      <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="#2563EB" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      <Circle cx="12" cy="13" r="4" stroke="#2563EB" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    </Svg>
                   </View>
                 </View>
                 <Text style={styles.modalTitle}>Camera Access</Text>
@@ -866,9 +1071,6 @@ export default function PracticeTab() {
 
   // ── Gesture Screen ──
   if (screen === 'gesture') {
-    const frameColor = phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : phase === 'detecting' ? '#F59E0B' : '#2563EB';
-    const frameLabel = phase === 'success' ? 'CORRECT!' : phase === 'fail' ? 'NOT QUITE!' : phase === 'detecting' ? 'SCANNING' : '';
-
     return (
       <View style={styles.gestureContainer}>
         <StatusBar barStyle="dark-content" backgroundColor="#BFE0F7" />
@@ -880,7 +1082,6 @@ export default function PracticeTab() {
           end={{ x: 0, y: 1 }}
         />
 
-        {/* Top Bar */}
         <View style={[styles.gestureTopBar, { paddingTop: insets.top + 12 }]}>
           <Pressy onPress={resetPractice} style={styles.gestureBackBtn} scaleTo={0.88}>
             <Ionicons name="arrow-back" size={22} color="#1E3A8A" />
@@ -916,7 +1117,6 @@ export default function PracticeTab() {
           </View>
         </View>
 
-        {/* Camera Frame with Senya */}
         <View style={styles.gestureFrameWrap}>
           <View style={styles.gestureFrameOuter}>
             <CameraView
@@ -928,41 +1128,27 @@ export default function PracticeTab() {
               onMountError={() => console.log('Camera mount error')}
             />
 
-            {/* Senya Teaching Overlay */}
             <Animated.View style={[styles.senyaOverlay, { transform: [{ translateY: senyaFloat }] }]}>
               <Image source={images.senyaTeaching} style={styles.senyaOverlayImage} resizeMode="contain" />
-              {phase === 'success' && (
-                <View style={styles.senyaFeedbackSuccess}>
-                  <CheckIcon size={13} color="#FFFFFF" />
-                </View>
-              )}
-              {phase === 'fail' && (
-                <View style={styles.senyaFeedbackFail}>
-                  <RepeatIcon size={13} color="#FFFFFF" />
-                </View>
-              )}
-              {phase === 'detecting' && (
-                <View style={styles.senyaFeedbackScanning}>
-                  <View style={styles.senyaScanningDot} />
-                </View>
-              )}
             </Animated.View>
 
             <Animated.View
               style={[
                 styles.gestureFrame,
-                { borderColor: frameColor },
+                { borderColor: phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : phase === 'detecting' ? '#F59E0B' : '#2563EB' },
                 { transform: [{ scale: phase === 'detecting' ? pulseAnim : 1 }] },
               ]}
             >
-              <View style={[styles.gestureCorner, styles.gestureCornerTL, { borderColor: frameColor }]} />
-              <View style={[styles.gestureCorner, styles.gestureCornerTR, { borderColor: frameColor }]} />
-              <View style={[styles.gestureCorner, styles.gestureCornerBL, { borderColor: frameColor }]} />
-              <View style={[styles.gestureCorner, styles.gestureCornerBR, { borderColor: frameColor }]} />
+              <View style={[styles.gestureCorner, styles.gestureCornerTL, { borderColor: phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : phase === 'detecting' ? '#F59E0B' : '#2563EB' }]} />
+              <View style={[styles.gestureCorner, styles.gestureCornerTR, { borderColor: phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : phase === 'detecting' ? '#F59E0B' : '#2563EB' }]} />
+              <View style={[styles.gestureCorner, styles.gestureCornerBL, { borderColor: phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : phase === 'detecting' ? '#F59E0B' : '#2563EB' }]} />
+              <View style={[styles.gestureCorner, styles.gestureCornerBR, { borderColor: phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : phase === 'detecting' ? '#F59E0B' : '#2563EB' }]} />
 
               {phase !== 'ready' && (
-                <View style={[styles.gestureFrameLabel, { backgroundColor: frameColor }]}>
-                  <Text style={styles.gestureFrameLabelText}>{frameLabel}</Text>
+                <View style={[styles.gestureFrameLabel, { backgroundColor: phase === 'success' ? '#22C55E' : phase === 'fail' ? '#EF4444' : '#F59E0B' }]}>
+                  <Text style={styles.gestureFrameLabelText}>
+                    {phase === 'success' ? 'CORRECT!' : phase === 'fail' ? 'NOT QUITE!' : 'SCANNING'}
+                  </Text>
                 </View>
               )}
 
@@ -971,7 +1157,7 @@ export default function PracticeTab() {
                   style={[
                     styles.gestureScanLine,
                     {
-                      backgroundColor: frameColor,
+                      backgroundColor: '#F59E0B',
                       transform: [{ translateY: scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [-120, 120] }) }],
                     },
                   ]}
@@ -984,12 +1170,16 @@ export default function PracticeTab() {
                     <View style={styles.gestureLetterBadge}>
                       <Text style={styles.gestureSignLetter}>{sign.sign}</Text>
                     </View>
-                    <View style={styles.gestureBadgeAccent}>
-                      <HandIcon size={14} color="rgba(255,255,255,0.7)" />
-                      <Text style={styles.gestureSignLabel}>Sign {sign.sign}</Text>
-                    </View>
                     <Pressy onPress={() => setShowHint(!showHint)} style={styles.hintButton} scaleTo={0.94}>
-                      <BulbIcon size={18} color={showHint ? '#F59E0B' : '#94A3B8'} />
+                      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                        <Path
+                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                          stroke={showHint ? '#F59E0B' : '#94A3B8'}
+                          strokeWidth={2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </Svg>
                       <Text style={[styles.hintButtonText, { color: showHint ? '#F59E0B' : '#94A3B8' }]}>
                         {showHint ? 'Hide Hint' : 'Show Hint'}
                       </Text>
@@ -1015,7 +1205,6 @@ export default function PracticeTab() {
           </View>
         </View>
 
-        {/* Bottom Panel */}
         <View style={[styles.gestureBottomPanel, { paddingBottom: insets.bottom + 100 }]}>
           <View style={styles.gestureSignInfo}>
             <View style={styles.gestureSignEmojiContainer}>
@@ -1060,7 +1249,10 @@ export default function PracticeTab() {
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  <CameraIcon size={18} color="#FFFFFF" />
+                  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                    <Path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    <Circle cx="12" cy="13" r="4" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
                   <Text style={styles.gestureStartBtnText}>
                     {!cameraReady ? 'Initializing Camera...' : 'Start Detection'}
                   </Text>
@@ -1076,7 +1268,6 @@ export default function PracticeTab() {
           )}
         </View>
 
-        {/* Full Screen Result Overlay */}
         {showFullScreenResult && (
           <Animated.View style={[styles.fullScreenResult, { opacity: fadeAnim }]}>
             <LinearGradient
@@ -1102,13 +1293,16 @@ export default function PracticeTab() {
                 {phase === 'success' ? (
                   <View style={styles.fullScreenIconContainer}>
                     <View style={styles.fullScreenIconCircle}>
-                      <CheckIcon size={64} color="#FFFFFF" />
+                      <CheckCircle size={64} color="#FFFFFF" />
                     </View>
                   </View>
                 ) : (
                   <View style={styles.fullScreenIconContainer}>
                     <View style={[styles.fullScreenIconCircle, styles.fullScreenIconCircleFail]}>
-                      <XIcon size={64} color="#FFFFFF" />
+                      <Svg width={64} height={64} viewBox="0 0 24 24" fill="none">
+                        <Line x1="18" y1="6" x2="6" y2="18" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
+                        <Line x1="6" y1="6" x2="18" y2="18" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
+                      </Svg>
                     </View>
                   </View>
                 )}
@@ -1123,7 +1317,16 @@ export default function PracticeTab() {
                     <Animated.View
                       style={[
                         styles.fullScreenProgressFill,
-                        { width: fadeAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: ['0%', '50%', '100%'] }) },
+                        {
+                          transform: [
+                            {
+                              scaleX: fadeAnim.interpolate({
+                                inputRange: [0, 0.5, 1],
+                                outputRange: [0, 0.5, 1],
+                              }),
+                            },
+                          ],
+                        },
                       ]}
                     />
                   </View>
@@ -1138,7 +1341,10 @@ export default function PracticeTab() {
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      <RepeatIcon size={16} color="#FFFFFF" />
+                      <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                        <Path d="M4 4.5v5h5M20 19.5v-5h-5" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                        <Path d="M4.7 14.5A8 8 0 0 0 19 9M19.3 9.5A8 8 0 0 0 5 15" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" />
+                      </Svg>
                       <Text style={styles.fullScreenRetryText}>Try Again</Text>
                     </LinearGradient>
                   </Pressy>
@@ -1151,29 +1357,35 @@ export default function PracticeTab() {
     );
   }
 
+  // ── Scoreboard Screen ──
+  if (screen === 'scoreboard') {
+    return (
+      <ScoreboardScreen
+        score={score}
+        total={GESTURE_SIGNS.length}
+        time={timeSpent}
+        onContinue={resetPractice}
+      />
+    );
+  }
+
   return null;
 }
 
-// ══════════════════════════════════════════════════════════
-// STYLES
-// ══════════════════════════════════════════════════════════
+// ── Styles ──
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#BFE0F7',
-  },
+  container: { flex: 1, backgroundColor: '#BFE0F7' },
 
-  // ── Ambient decoration ──
-  ambientOrb: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-  },
+  // ── Blobs ──
+  blobContainer: { ...StyleSheet.absoluteFillObject, overflow: 'hidden' },
+  blob: { position: 'absolute', borderRadius: 9999 },
+  blob1: { width: 300, height: 300, top: -100, right: -100, backgroundColor: 'rgba(37, 99, 235, 0.04)' },
+  blob2: { width: 200, height: 200, bottom: 100, left: -80, backgroundColor: 'rgba(245, 158, 11, 0.05)' },
+  blob3: { width: 150, height: 150, top: '40%', right: -50, backgroundColor: 'rgba(124, 58, 237, 0.04)' },
 
   // ── Glass Card ──
   glassWrap: {
-    borderRadius: 24,
+    borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.5)',
@@ -1182,6 +1394,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 16,
     elevation: 4,
+    backgroundColor: 'rgba(255,255,255,0.6)',
   },
   glassTint: {
     ...StyleSheet.absoluteFillObject,
@@ -1204,9 +1417,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.85)',
   },
 
+  // ── Ambient ──
+  ambientOrb: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+  },
+
   // ── Scroll ──
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: H_PADDING,
   },
 
   // ── Header ──
@@ -1216,42 +1437,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 18,
   },
-  logoContainer: {
+  headerTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
-  brandText: {
-    fontSize: 22,
+  headerMascot: {
+    width: 34,
+    height: 34,
+  },
+  pageTitle: {
+    fontSize: 24,
     fontWeight: '900',
-    color: '#1E3A8A',
-    letterSpacing: 0.5,
+    color: C.ink,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notifDot: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
-    borderWidth: 1.5,
-    borderColor: '#fff',
   },
   streakPill: {
     flexDirection: 'row',
@@ -1318,97 +1521,202 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
 
-  // ── Section ──
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E3A8A',
+  // ── Stats Row ──
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingVertical: 14,
+    marginBottom: 20,
+  },
+  statPill: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  statValue: { fontSize: 17, fontWeight: '900', color: C.ink, marginTop: 2 },
+  statLabel: { fontSize: 11, fontWeight: '600', color: C.slate },
+  statDivider: { width: 1, height: 30, backgroundColor: C.border },
+
+  // ── Section Labels ──
+  sectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 12,
+    marginTop: 4,
+  },
+  sectionLabelBar: {
+    width: 4,
+    height: 16,
+    borderRadius: 2,
+  },
+  sectionLabelText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.slate,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 
-  // ── Lesson Cards ──
-  lessonCard: {
+  // ── Large Cards ──
+  largeRow: {
+    flexDirection: 'row',
+    gap: LARGE_GAP,
+    marginBottom: 24,
+  },
+  largeCard: {
+    borderWidth: 2,
+    overflow: 'hidden',
+  },
+  largeCardGradient: {
+    padding: 16,
+    minHeight: 180,
+  },
+  largeCardCheck: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 2,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  largeCardProgress: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.success,
+  },
+  largeIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  largeIcon: { width: 32, height: 32 },
+  largeCardTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  largeCardDescription: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#565E80',
+    lineHeight: 17,
+    marginBottom: 14,
+    flexGrow: 1,
+  },
+  largeCardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
-    marginBottom: 10,
   },
-  lessonCardLocked: {
-    opacity: 0.6,
-  },
-  lessonCardLeft: {
+  largeCardMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    gap: 4,
   },
-  lessonIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: 'rgba(37, 99, 235, 0.08)',
+  largeCardMetaText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#565E80',
+  },
+  largeCardArrow: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.12)',
   },
-  lessonIconContainerLocked: {
-    backgroundColor: 'rgba(148,163,184,0.1)',
-    borderColor: 'rgba(148,163,184,0.15)',
+
+  // ── Small Cards ──
+  smallRow: {
+    flexDirection: 'row',
+    gap: SMALL_GAP,
+    marginBottom: 22,
   },
-  lessonInfo: {
-    flex: 1,
+  smallCard: {
+    borderWidth: 1.5,
+    overflow: 'hidden',
   },
-  lessonTitleRow: {
+  smallCardInner: {
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  smallCardLock: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 2,
+  },
+  smallCardProgress: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 2,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  smallCardProgressText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: C.success,
+  },
+  smallIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  smallIcon: { width: 24, height: 24 },
+  smallCardTitle: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  smallCardMetaText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#565E80',
+  },
+
+  // ── Tip Card ──
+  tipCard: {
+    padding: 16,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  tipContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
-  lessonTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+  tipTextContainer: { flex: 1 },
+  tipTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: C.ink,
+    marginBottom: 2,
   },
-  lessonTitleLocked: {
-    color: '#9CA3AF',
-  },
-  lessonSubtitle: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 1,
-  },
-  lessonSubtitleLocked: {
-    color: '#9CA3AF',
-  },
-  lessonProgressContainer: {
-    marginTop: 6,
-  },
-  lessonProgressBar: {
-    height: 4,
-    backgroundColor: 'rgba(17,24,39,0.08)',
-    borderRadius: 2,
-    overflow: 'hidden',
-    width: 100,
-  },
-  lessonProgressFill: {
-    height: '100%',
-    backgroundColor: '#2563EB',
-    borderRadius: 2,
-  },
-  lessonProgressText: {
-    fontSize: 10,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  lessonLockedText: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 2,
-    fontStyle: 'italic',
-  },
-  lessonArrow: {
-    marginLeft: 8,
+  tipDescription: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: C.slate,
+    lineHeight: 19,
   },
 
   // ── Modals ──
@@ -1662,16 +1970,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFFFFF',
   },
-  gestureBadgeAccent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  gestureSignLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
   hintButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1687,6 +1985,7 @@ const styles = StyleSheet.create({
   hintButtonText: {
     fontSize: 12,
     fontWeight: '600',
+    color: '#94A3B8',
   },
   hintContainer: {
     marginTop: 8,
@@ -1806,47 +2105,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
 
-  // ── Senya Feedback ──
-  senyaFeedbackSuccess: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(34,197,94,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  senyaFeedbackFail: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(239,68,68,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  senyaFeedbackScanning: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(245,158,11,0.9)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  senyaScanningDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FFFFFF',
-  },
-
   // ── Full Screen Result ──
   fullScreenResult: {
     ...StyleSheet.absoluteFillObject,
@@ -1897,9 +2155,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   fullScreenProgressFill: {
+    width: '100%',
     height: '100%',
     backgroundColor: 'rgba(255,255,255,0.6)',
     borderRadius: 2,
+    transformOrigin: 'left',
   },
   fullScreenRetryButton: {
     marginTop: 16,
@@ -1921,16 +2181,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  // ── Scoreboard Screen ──
+  // ── Scoreboard ──
   scoreboardContainer: {
     flex: 1,
     backgroundColor: '#1E3A8A',
     overflow: 'hidden',
   },
-  scoreboardContent: {
+  scoreboardScrollView: {
     flex: 1,
+  },
+  scoreboardContent: {
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 20,
   },
   scoreboardCard: {
@@ -2039,14 +2301,86 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   rankProgressFill: {
+    width: '100%',
     height: '100%',
     borderRadius: 3,
+    transformOrigin: 'left',
   },
   rankProgressText: {
     fontSize: 11,
     color: 'rgba(255,255,255,0.5)',
     marginTop: 4,
     textAlign: 'center',
+  },
+  rankListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  rankListHeaderText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.6)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+  },
+  rankListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 4,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  topRankItem: {
+    backgroundColor: 'rgba(245,158,11,0.14)',
+  },
+  userRankItem: {
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.4)',
+  },
+  rankListPosition: {
+    width: 50,
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+  },
+  rankListName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+  },
+  rankListScore: {
+    width: 60,
+    fontSize: 13,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)',
+    textAlign: 'center',
+  },
+  rankListTime: {
+    width: 70,
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'right',
+  },
+  userRankText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  topRankText: {
+    color: '#F59E0B',
+    fontWeight: '700',
   },
   scoreboardContinueBtn: {
     width: '100%',

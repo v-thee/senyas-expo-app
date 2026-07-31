@@ -301,7 +301,7 @@ export default function AchievementsTab() {
   const filteredBadges = getFilteredBadges();
 
   // Calculate next milestone
-  const currentXP = 340;
+  const currentXP = 465;
   const nextMilestone = XP_MILESTONES.find(m => m.value > currentXP);
   const xpToNext = nextMilestone ? nextMilestone.value - currentXP : 0;
 
@@ -335,7 +335,7 @@ export default function AchievementsTab() {
           <View style={styles.headerRight}>
             <View style={styles.streakPill}>
               <Image source={images.streak} style={styles.streakPillIcon} resizeMode="contain" />
-              <Text style={styles.streakPillText}>5</Text>
+              <Text style={styles.streakPillText}>1</Text>
             </View>
             <TouchableOpacity style={styles.iconCircle}>
               <BellIcon size={17} color="#1E3A8A" />
@@ -366,7 +366,7 @@ export default function AchievementsTab() {
                 </View>
                 <View style={styles.xpContainer}>
                   <Text style={styles.xpLabel}>XP</Text>
-                  <Animated.Text style={[styles.xpValue, { transform: [{ scale: pulseScale }] }]}>340</Animated.Text>
+                  <Animated.Text style={[styles.xpValue, { transform: [{ scale: pulseScale }] }]}>465</Animated.Text>
                   <Text style={styles.xpNext}>{xpToNext} XP to next</Text>
                 </View>
               </View>
@@ -413,7 +413,7 @@ export default function AchievementsTab() {
               </View>
               <View style={styles.levelXp}>
                 <StarIcon size={14} color="#F59E0B" />
-                <Text style={styles.levelXpText}>340 XP</Text>
+                <Text style={styles.levelXpText}>465 XP</Text>
               </View>
             </View>
           </View>
@@ -469,7 +469,7 @@ export default function AchievementsTab() {
         <View style={styles.progressSection}>
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel}>Current Progress</Text>
-            <Text style={styles.progressValue}>340 / 500 XP</Text>
+            <Text style={styles.progressValue}>465 / 500 XP</Text>
           </View>
           <View style={styles.progressBarTrack}>
             <Animated.View style={{ width: progressWidth, height: '100%' }}>

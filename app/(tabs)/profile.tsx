@@ -1053,16 +1053,25 @@ export default function ProfileSettingsScreen({ onLogout }: ProfileSettingsScree
   };
 
   const handleSignOutConfirm = async (): Promise<void> => {
-    try {
-      setShowSignOut(false);
-      if (onLogout) {
-        onLogout();
-      }
-    } catch (error) {
-      console.error('Sign out error:', error);
-      Alert.alert('Error', 'Failed to sign out. Please try again.');
+  try {
+    setShowSignOut(false);
+
+    // Clear login data
+    await AsyncStorage.removeItem('userId');
+    await AsyncStorage.removeItem('studentName');
+
+    if (onLogout) {
+      onLogout();
     }
-  };
+
+    // Navigate to LoadingLogout screen
+    router.replace('/screens/LoadingLogout');
+
+  } catch (error) {
+    console.error('Sign out error:', error);
+    Alert.alert('Error', 'Failed to sign out. Please try again.');
+  }
+};
 
   const handleEditSave = async (): Promise<void> => {
     try {

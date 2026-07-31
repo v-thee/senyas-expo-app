@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,63 @@ import {
   Image,
   Animated,
   Easing,
+  Alert,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { router, useLocalSearchParams } from 'expo-router';
+import Svg, { Path, Circle, Rect, Text as SvgText } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ── API Configuration ──
+const API_URL = Platform.OS === 'android' 
+  ? 'http://192.168.24.206/api/api.php' // Android emulator
+  : 'http://192.168.24.206/api/api.php'; // iOS or web
+
+// ── API Helper Functions ──
+async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', data?: any): Promise<any> {
+  let url = `${API_URL}?action=${action}`;
+  const options: RequestInit = {
+    method: method,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  };
+
+  if (method === 'POST' && data) {
+    const formData = new URLSearchParams();
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined && data[key] !== null) {
+        if (typeof data[key] === 'object') {
+          formData.append(key, JSON.stringify(data[key]));
+        } else {
+          formData.append(key, String(data[key]));
+        }
+      }
+    });
+    options.body = formData.toString();
+  } else if (method === 'GET' && data) {
+    const params = new URLSearchParams(data);
+    url += `&${params.toString()}`;
+  }
+
+  try {
+    const response = await fetch(url, options);
+    const result = await response.json();
+    
+    if (result.status === 'error') {
+      throw new Error(result.message || 'API request failed');
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('API request error:', error);
+    throw error;
+  }
+}
 
 // ── Images ──
 const images: Record<string, any> = {
@@ -48,11 +98,19 @@ const images: Record<string, any> = {
   x: require('@/assets/images/alphabet/x.jpg'),
   y: require('@/assets/images/alphabet/y.jpg'),
   z: require('@/assets/images/alphabet/z.jpg'),
+  // Number images
+  1: require('@/assets/images/numbers/1.jpg'),
+  2: require('@/assets/images/numbers/2.jpg'),
+  3: require('@/assets/images/numbers/3.jpg'),
+  4: require('@/assets/images/numbers/4.jpg'),
+  5: require('@/assets/images/numbers/5.jpg'),
+  6: require('@/assets/images/numbers/6.jpg'),
+  7: require('@/assets/images/numbers/7.jpg'),
+  8: require('@/assets/images/numbers/8.jpg'),
+  9: require('@/assets/images/numbers/9.jpg'),
 };
 
 // ── Design Tokens ──
-// Brighter, higher-contrast palette tuned for 7–11 year-olds: bigger color
-// jumps between states, warmer gold for "in progress", clear green for done.
 const C = {
   deepBlue: '#152B6B',
   royal: '#2647B8',
@@ -71,15 +129,38 @@ const C = {
   border: '#DCE4FA',
   success: '#10B981',
   needsWork: '#F59E0B',
+  numberColor: '#6B7280',
 };
 
 const SPARKLE_COLORS = [C.gold, C.sky, C.success, C.streak];
 
-/* ---------- Custom Icon Components (replacing emojis) ---------- */
+// ── Lesson card grid geometry ──
+const GRID_H_PADDING = 20;
+const GRID_GAP = 14;
+const GRID_CONTENT_WIDTH = SCREEN_WIDTH - GRID_H_PADDING * 2;
+const LESSON_CARD_WIDTH = (GRID_CONTENT_WIDTH - GRID_GAP) / 2;
+
+/* ---------- Custom Icon Components ---------- */
 const AlphabetIcon = ({ size = 24, color = '#2647B8' }: { size?: number; color?: string }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Rect x="2" y="2" width="20" height="20" rx="2" stroke={color} strokeWidth={2} />
     <Path d="M9 18V6l6 6-6 6" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
+const NumbersIcon = ({ size = 24, color = '#6B7280' }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Rect x="2" y="2" width="20" height="20" rx="2" stroke={color} strokeWidth={2} />
+    <SvgText
+      fontSize={14}
+      fontWeight="bold"
+      fill={color}
+      textAnchor="middle"
+      x={12}
+      y={17}
+    >
+      123
+    </SvgText>
   </Svg>
 );
 
@@ -186,6 +267,8 @@ const ThumbsUp = ({ size = 20, color = '#fff' }: { size?: number; color?: string
 );
 
 /* ---------- Types ---------- */
+type Mastery = 'unseen' | 'got-it' | 'needs-practice';
+
 export interface SignCard {
   id: string;
   label: string;
@@ -210,6 +293,7 @@ export interface Category {
   color: string;
   bgColor: string;
   lessons: LessonItem[];
+  requiredCategoryId?: string;
 }
 
 /* ---------- FSL Lesson Data ---------- */
@@ -221,7 +305,8 @@ const makeCards = (labels: string[], hint: (l: string) => string): SignCard[] =>
     imageKey: label.toLowerCase(),
   }));
 
-export const CATEGORIES: Category[] = [
+// Base lesson data (without statuses - will be merged with API data)
+const BASE_CATEGORIES: Omit<Category, 'lessons'>[] = [
   {
     id: 'alphabet',
     label: 'Alphabet',
@@ -229,39 +314,15 @@ export const CATEGORIES: Category[] = [
     iconComponent: <AlphabetIcon size={24} color={C.royal} />,
     color: C.royal,
     bgColor: C.royal + '22',
-    lessons: [
-      {
-        id: 'a',
-        title: 'Letters A-G',
-        description: 'The first 7 letters of the FSL manual alphabet',
-        status: 'done',
-        intro: 'Fingerspelling is used for names, places, and words without a dedicated sign. Go letter by letter — check the picture, hold the handshape, then try it from memory.',
-        cards: makeCards(['A', 'B', 'C', 'D', 'E', 'F', 'G'], (l) =>
-          `Match your hand to the picture for "${l}". Hold it steady for a second before moving to the next letter.`
-        ),
-      },
-      {
-        id: 'b',
-        title: 'Letters H-N',
-        description: 'Letters H through N',
-        status: 'done',
-        intro: 'Keep your hand at shoulder height and steady — most mix-ups between letters come from rushing, not the handshape itself.',
-        cards: makeCards(['H', 'I', 'J', 'K', 'L', 'M', 'N'], (l) =>
-          `Compare your handshape for "${l}" against the picture. Notice which fingers are out and which are tucked in.`
-        ),
-      },
-      {
-        id: 'c',
-        title: 'Letters O-Z',
-        description: 'The remaining letters, O through Z',
-        status: 'active',
-        intro: 'The last stretch of the alphabet! A few of these letters use a small movement instead of one still shape — watch closely for that.',
-        cards: makeCards(
-          ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'],
-          (l) => `Study the picture for "${l}" and practice holding it cleanly before speeding up.`
-        ),
-      },
-    ],
+  },
+  {
+    id: 'numbers',
+    label: 'Numbers',
+    icon: 'numbers',
+    iconComponent: <NumbersIcon size={24} color={C.numberColor} />,
+    color: C.numberColor,
+    bgColor: C.numberColor + '22',
+    requiredCategoryId: 'alphabet',
   },
   {
     id: 'greetings',
@@ -270,38 +331,7 @@ export const CATEGORIES: Category[] = [
     iconComponent: <GreetingIcon size={24} color={C.goldDeep} />,
     color: C.goldDeep,
     bgColor: C.goldDeep + '22',
-    lessons: [
-      {
-        id: 'greet-1',
-        title: 'Basic Greetings',
-        description: 'Hello, Good Morning, Good Afternoon, Good Evening',
-        status: 'done',
-        intro: 'Greeting signs come with a warm, friendly face — that\'s part of the sign, not just decoration!',
-        cards: makeCards(['Hello', 'Good', 'Morning', 'Afternoon', 'Evening'], (l) =>
-          `Watch the picture for "${l}" closely, then copy the motion at a natural, relaxed pace.`
-        ),
-      },
-      {
-        id: 'greet-2',
-        title: 'Saying Goodbye',
-        description: 'Goodbye, See You Later, Take Care',
-        status: 'active',
-        intro: 'Goodbye signs often reuse handshapes from greetings but move in a different direction — watch where the sign travels.',
-        cards: makeCards(['Goodbye', 'See You Later', 'Take Care'], (l) =>
-          `Break "${l}" into its motion path using the picture, then repeat it smoothly three times.`
-        ),
-      },
-      {
-        id: 'greet-3',
-        title: 'Polite Phrases',
-        description: "Please, Thank You, You're Welcome",
-        status: 'locked',
-        intro: 'These three come up in almost every conversation — worth practicing until they feel automatic.',
-        cards: makeCards(['Please', 'Thank You', "You're Welcome"], (l) =>
-          `Practice "${l}" alongside its picture and pair it with a friendly nod, like you would in real life.`
-        ),
-      },
-    ],
+    requiredCategoryId: 'numbers',
   },
   {
     id: 'introductions',
@@ -310,38 +340,7 @@ export const CATEGORIES: Category[] = [
     iconComponent: <UserIcon size={24} color={C.sky} />,
     color: C.sky,
     bgColor: C.sky + '22',
-    lessons: [
-      {
-        id: 'intro-1',
-        title: 'Introducing Yourself',
-        description: 'Name, My, Your, What',
-        status: 'done',
-        intro: 'You\'ll usually fingerspell your name after signing "name" — so this lesson connects right back to the alphabet.',
-        cards: makeCards(['Name', 'My', 'Your', 'What'], (l) =>
-          `Practice "${l}" using the picture, then try combining it with your fingerspelled name.`
-        ),
-      },
-      {
-        id: 'intro-2',
-        title: 'Meeting People',
-        description: 'Nice, Meet, You, and the full phrase "Nice to Meet You"',
-        status: 'active',
-        intro: 'Once you know the single signs, chain them together at a normal talking pace instead of pausing between each one.',
-        cards: makeCards(['Nice', 'Meet', 'You', 'Nice to Meet You'], (l) =>
-          `Learn "${l}" from the picture, then practice it as part of the full phrase.`
-        ),
-      },
-      {
-        id: 'intro-3',
-        title: 'Asking Questions',
-        description: 'What, Who, Where, When, Why',
-        status: 'locked',
-        intro: 'Question signs come with a special eyebrow face in FSL — look for that in the picture, not just the hands.',
-        cards: makeCards(['What', 'Who', 'Where', 'When', 'Why'], (l) =>
-          `Practice "${l}" and notice the face shown in the picture — it changes the meaning.`
-        ),
-      },
-    ],
+    requiredCategoryId: 'greetings',
   },
   {
     id: 'courtesy',
@@ -350,40 +349,177 @@ export const CATEGORIES: Category[] = [
     iconComponent: <HeartIcon size={24} color={C.success} />,
     color: C.success,
     bgColor: C.success + '22',
-    lessons: [
-      {
-        id: 'courtesy-1',
-        title: 'Everyday Courtesy',
-        description: 'Yes, No, Please, Thank You',
-        status: 'active',
-        intro: 'These four signs cover a huge share of everyday talking — a great place to build real speed and confidence.',
-        cards: makeCards(['Yes', 'No', 'Please', 'Thank You'], (l) =>
-          `Drill "${l}" against the picture until you can do it without stopping to think.`
-        ),
-      },
-      {
-        id: 'courtesy-2',
-        title: 'Understanding Responses',
-        description: "Understand, Don't Know, Don't Understand",
-        status: 'locked',
-        intro: 'These signs let you answer honestly in a conversation instead of guessing — super useful for real chats.',
-        cards: makeCards(['Understand', "Don't Know", "Don't Understand"], (l) =>
-          `Practice "${l}" from the picture, paying attention to the direction the sign moves.`
-        ),
-      },
-      {
-        id: 'courtesy-3',
-        title: 'Conversation Flow',
-        description: 'Combining greetings, introductions, and courtesy',
-        status: 'locked',
-        intro: 'This lesson is a review — chain together signs from earlier lessons into short, natural exchanges.',
-        cards: makeCards(['Greeting', 'Introduction', 'Courtesy'], (l) =>
-          `Review the signs you've learned under "${l}" and practice using them together in a short exchange.`
-        ),
-      },
-    ],
+    requiredCategoryId: 'introductions',
   },
 ];
+
+// Default lessons for each category (default statuses, will be overridden by API)
+const DEFAULT_LESSONS: Record<string, LessonItem[]> = {
+  alphabet: [
+    {
+      id: 'a',
+      title: 'Letters A-G',
+      description: 'The first 7 letters of the FSL manual alphabet',
+      status: 'done',
+      intro: 'Fingerspelling is used for names, places, and words without a dedicated sign. Go letter by letter — check the picture, hold the handshape, then try it from memory.',
+      cards: makeCards(['A', 'B', 'C', 'D', 'E', 'F', 'G'], (l) =>
+        `Match your hand to the picture for "${l}". Hold it steady for a second before moving to the next letter.`
+      ),
+    },
+    {
+      id: 'b',
+      title: 'Letters H-N',
+      description: 'Letters H through N',
+      status: 'done',
+      intro: 'Keep your hand at shoulder height and steady — most mix-ups between letters come from rushing, not the handshape itself.',
+      cards: makeCards(['H', 'I', 'J', 'K', 'L', 'M', 'N'], (l) =>
+        `Compare your handshape for "${l}" against the picture. Notice which fingers are out and which are tucked in.`
+      ),
+    },
+    {
+      id: 'c',
+      title: 'Letters O-Z',
+      description: 'The remaining letters, O through Z',
+      status: 'active',
+      intro: 'The last stretch of the alphabet! A few of these letters use a small movement instead of one still shape — watch closely for that.',
+      cards: makeCards(
+        ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'],
+        (l) => `Study the picture for "${l}" and practice holding it cleanly before speeding up.`
+      ),
+    },
+  ],
+  numbers: [
+    {
+      id: 'num-1',
+      title: 'Single Digits 0-9',
+      description: 'Learn to sign numbers 0 through 9 in FSL',
+      status: 'locked',
+      intro: 'Single-digit numbers in FSL are executed using one hand with the palm facing inward or outward depending on context.',
+      cards: makeCards(
+        ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+        (l) => `Form the ${l} handshape as shown in the picture. Practice holding it steady.`
+      ),
+    },
+    {
+      id: 'num-2',
+      title: 'Two-Digit Numbers 10-99',
+      description: 'Learn to sign numbers 10 through 99',
+      status: 'locked',
+      intro: 'Two-digit numbers are divided into two main categories: base multiples of 10 and compound numbers.',
+      cards: makeCards(
+        ['10', '20', '30', '40', '50', '60', '70', '80', '90', '25', '47', '82'],
+        (l) => `Practice signing ${l} with the correct movement pattern.`
+      ),
+    },
+    {
+      id: 'num-3',
+      title: 'Three-Digit Numbers 100-999',
+      description: 'Learn to sign numbers 100 through 999',
+      status: 'locked',
+      intro: 'Three-digit numbers introduce the concept sign for "HUNDRED". Numbers are built sequentially.',
+      cards: makeCards(
+        ['100', '200', '500', '125', '308', '742'],
+        (l) => `Sign ${l} using the HUNDRED marker after the first digit.`
+      ),
+    },
+  ],
+  greetings: [
+    {
+      id: 'greet-1',
+      title: 'Basic Greetings',
+      description: 'Hello, Good Morning, Good Afternoon, Good Evening',
+      status: 'locked',
+      intro: 'Greeting signs come with a warm, friendly face — that\'s part of the sign, not just decoration!',
+      cards: makeCards(['Hello', 'Good', 'Morning', 'Afternoon', 'Evening'], (l) =>
+        `Watch the picture for "${l}" closely, then copy the motion at a natural, relaxed pace.`
+      ),
+    },
+    {
+      id: 'greet-2',
+      title: 'Saying Goodbye',
+      description: 'Goodbye, See You Later, Take Care',
+      status: 'locked',
+      intro: 'Goodbye signs often reuse handshapes from greetings but move in a different direction — watch where the sign travels.',
+      cards: makeCards(['Goodbye', 'See You Later', 'Take Care'], (l) =>
+        `Break "${l}" into its motion path using the picture, then repeat it smoothly three times.`
+      ),
+    },
+    {
+      id: 'greet-3',
+      title: 'Polite Phrases',
+      description: "Please, Thank You, You're Welcome",
+      status: 'locked',
+      intro: 'These three come up in almost every conversation — worth practicing until they feel automatic.',
+      cards: makeCards(['Please', 'Thank You', "You're Welcome"], (l) =>
+        `Practice "${l}" alongside its picture and pair it with a friendly nod, like you would in real life.`
+      ),
+    },
+  ],
+  introductions: [
+    {
+      id: 'intro-1',
+      title: 'Introducing Yourself',
+      description: 'Name, My, Your, What',
+      status: 'locked',
+      intro: 'You\'ll usually fingerspell your name after signing "name" — so this lesson connects right back to the alphabet.',
+      cards: makeCards(['Name', 'My', 'Your', 'What'], (l) =>
+        `Practice "${l}" using the picture, then try combining it with your fingerspelled name.`
+      ),
+    },
+    {
+      id: 'intro-2',
+      title: 'Meeting People',
+      description: 'Nice, Meet, You, and the full phrase "Nice to Meet You"',
+      status: 'locked',
+      intro: 'Once you know the single signs, chain them together at a normal talking pace instead of pausing between each one.',
+      cards: makeCards(['Nice', 'Meet', 'You', 'Nice to Meet You'], (l) =>
+        `Learn "${l}" from the picture, then practice it as part of the full phrase.`
+      ),
+    },
+    {
+      id: 'intro-3',
+      title: 'Asking Questions',
+      description: 'What, Who, Where, When, Why',
+      status: 'locked',
+      intro: 'Question signs come with a special eyebrow face in FSL — look for that in the picture, not just the hands.',
+      cards: makeCards(['What', 'Who', 'Where', 'When', 'Why'], (l) =>
+        `Practice "${l}" and notice the face shown in the picture — it changes the meaning.`
+      ),
+    },
+  ],
+  courtesy: [
+    {
+      id: 'courtesy-1',
+      title: 'Everyday Courtesy',
+      description: 'Yes, No, Please, Thank You',
+      status: 'locked',
+      intro: 'These four signs cover a huge share of everyday talking — a great place to build real speed and confidence.',
+      cards: makeCards(['Yes', 'No', 'Please', 'Thank You'], (l) =>
+        `Drill "${l}" against the picture until you can do it without stopping to think.`
+      ),
+    },
+    {
+      id: 'courtesy-2',
+      title: 'Understanding Responses',
+      description: "Understand, Don't Know, Don't Understand",
+      status: 'locked',
+      intro: 'These signs let you answer honestly in a conversation instead of guessing — super useful for real chats.',
+      cards: makeCards(['Understand', "Don't Know", "Don't Understand"], (l) =>
+        `Practice "${l}" from the picture, paying attention to the direction the sign moves.`
+      ),
+    },
+    {
+      id: 'courtesy-3',
+      title: 'Conversation Flow',
+      description: 'Combining greetings, introductions, and courtesy',
+      status: 'locked',
+      intro: 'This lesson is a review — chain together signs from earlier lessons into short, natural exchanges.',
+      cards: makeCards(['Greeting', 'Introduction', 'Courtesy'], (l) =>
+        `Review the signs you've learned under "${l}" and practice using them together in a short exchange.`
+      ),
+    },
+  ],
+};
 
 /* ---------- Glass Card Component ---------- */
 function GlassCard({ children, style }: { children: React.ReactNode; style?: any }) {
@@ -396,8 +532,6 @@ function GlassCard({ children, style }: { children: React.ReactNode; style?: any
 }
 
 /* ---------- A big, bouncy, kid-friendly pressable ---------- */
-// Every important tap gets a little "squish" so kids get instant physical
-// feedback that their tap registered, even before anything else changes.
 function BouncyPress({
   onPress,
   disabled,
@@ -479,23 +613,30 @@ function CelebrationSparkles() {
   );
 }
 
-/* ---------- Mastery state for a lesson's cards ---------- */
-type Mastery = 'unseen' | 'got-it' | 'needs-practice';
+/* ---------- Helper function to check if category is unlocked ---------- */
+function isCategoryUnlocked(category: Category, allCategories: Category[]): boolean {
+  if (!category.requiredCategoryId) return true;
+  const requiredCategory = allCategories.find(c => c.id === category.requiredCategoryId);
+  if (!requiredCategory) return true;
+  return requiredCategory.lessons.every(lesson => lesson.status === 'done');
+}
 
 /* ---------- Main Component ---------- */
 export default function Lessons() {
   const insets = useSafeAreaInsets();
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const params = useLocalSearchParams<{ lessonId?: string; category?: string; title?: string }>();
+  const [userId, setUserId] = useState<number>(1);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [activeId, setActiveId] = useState('alphabet');
   const [selected, setSelected] = useState<{ categoryId: string; lessonId: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [cardIndex, setCardIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [mastery, setMastery] = useState<Record<string, Mastery>>({});
   const [finished, setFinished] = useState(false);
 
-  // Friendly, temporary message shown when a kid taps a locked lesson —
-  // replaces the old silent no-op with a clear reason + what to do next.
   const [lockedTip, setLockedTip] = useState<string | null>(null);
   const lockedTipOpacity = useRef(new Animated.Value(0)).current;
   const lockedTipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -503,20 +644,116 @@ export default function Lessons() {
   const cardPop = useRef(new Animated.Value(0)).current;
   const cueFade = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const cat = categories.find((c) => c.id === activeId)!;
-  const done = cat.lessons.filter((l) => l.status === 'done').length;
-  const total = cat.lessons.length;
+  // Load user ID from storage
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const userJson = await AsyncStorage.getItem('user');
+        if (userJson) {
+          const user = JSON.parse(userJson);
+          setUserId(user.id || 1);
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+      }
+    };
+    loadUser();
+  }, []);
+
+  // Load progress from API
+  const loadProgress = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const result = await apiRequest('getLessonProgress', 'GET', { user_id: userId });
+      const progressData = result.progress || [];
+
+      const categoriesWithProgress: Category[] = BASE_CATEGORIES.map((baseCat) => {
+        const defaultLessons = DEFAULT_LESSONS[baseCat.id] || [];
+        
+        const lessonsWithProgress = defaultLessons.map((lesson) => {
+          const progress = progressData.find(
+            (p: any) => p.category_id === baseCat.id && p.lesson_id === lesson.id
+          );
+          
+          if (progress) {
+            return {
+              ...lesson,
+              status: progress.status as 'locked' | 'active' | 'done',
+            };
+          }
+          return lesson;
+        });
+
+        return {
+          ...baseCat,
+          lessons: lessonsWithProgress,
+        };
+      });
+
+      setCategories(categoriesWithProgress);
+      
+      // If we have route params, try to select that category/lesson
+      if (params.category && params.lessonId) {
+        const targetCategory = categoriesWithProgress.find(c => c.id === params.category);
+        if (targetCategory) {
+          setActiveId(targetCategory.id);
+          const targetLesson = targetCategory.lessons.find(l => l.id === params.lessonId);
+          if (targetLesson && targetLesson.status !== 'locked') {
+            // Auto-open the lesson
+            setSelected({ categoryId: targetCategory.id, lessonId: targetLesson.id });
+            setCardIndex(0);
+            setRevealed(false);
+            setMastery({});
+            setFinished(false);
+          }
+        }
+      } else {
+        // Fall back to first active category
+        const firstActiveCategory = categoriesWithProgress.find(cat => 
+          cat.lessons.some(l => l.status === 'active' || l.status === 'done')
+        );
+        if (firstActiveCategory) {
+          setActiveId(firstActiveCategory.id);
+        }
+      }
+
+    } catch (err) {
+      console.error('Error loading progress:', err);
+      setError('Failed to load lesson progress. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, params.category, params.lessonId]);
+
+  // Load progress on mount
+  useEffect(() => {
+    if (userId) {
+      loadProgress();
+    }
+  }, [userId, loadProgress]);
+
+  // ── MOVED: All calculations and useMemo hooks BEFORE early return ──
+  const cat = categories.find((c) => c.id === activeId);
+  
+  const activeIndex = cat?.lessons.findIndex((l) => l.status === 'active') ?? -1;
+  const done = cat?.lessons.filter((l) => l.status === 'done').length ?? 0;
+  const total = cat?.lessons.length ?? 0;
+  const activeLesson = activeIndex >= 0 && cat ? cat.lessons[activeIndex] : null;
 
   const selectedLesson = useMemo(() => {
     if (!selected) return null;
-    const category = categories.find((c) => c.id === selected.categoryId)!;
-    const lesson = category.lessons.find((l) => l.id === selected.lessonId)!;
+    const category = categories.find((c) => c.id === selected.categoryId);
+    if (!category) return null;
+    const lesson = category.lessons.find((l) => l.id === selected.lessonId);
+    if (!lesson) return null;
     return { category, lesson };
   }, [selected, categories]);
 
-  // Animate the category progress bar whenever it changes, instead of
-  // snapping instantly — small, calm motion that still reads as "alive".
+  // Animate the category progress bar
   useEffect(() => {
     Animated.timing(progressAnim, {
       toValue: total > 0 ? done / total : 0,
@@ -526,13 +763,25 @@ export default function Lessons() {
     }).start();
   }, [done, total, activeId]);
 
-  // Pop the flashcard in when moving to a new card.
+  // Gentle pulsing glow on the "Continue Lesson" card's icon
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.12, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 750, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [activeId]);
+
+  // Pop the flashcard in when moving to a new card
   useEffect(() => {
     cardPop.setValue(0);
     Animated.spring(cardPop, { toValue: 1, useNativeDriver: true, speed: 16, bounciness: 8 }).start();
   }, [cardIndex, selected]);
 
-  // Fade the cue text in only after the card is revealed.
+  // Fade the cue text in only after the card is revealed
   useEffect(() => {
     if (revealed) {
       cueFade.setValue(0);
@@ -568,14 +817,26 @@ export default function Lessons() {
     }, 2400);
   };
 
-  const handleOpenLesson = (categoryId: string, lesson: LessonItem, previousTitle?: string) => {
+  const handleOpenLesson = (categoryId: string, lesson: LessonItem) => {
     if (lesson.status === 'locked') {
-      // Better logic: tell the kid exactly what's blocking them instead of
-      // nothing happening at all.
+      const category = categories.find(c => c.id === categoryId);
+      const lessonIndex = category?.lessons.findIndex(l => l.id === lesson.id) || 0;
+      const previousLesson = lessonIndex > 0 ? category?.lessons[lessonIndex - 1] : null;
+      
+      if (category?.requiredCategoryId) {
+        const requiredCat = categories.find(c => c.id === category.requiredCategoryId);
+        if (requiredCat && !requiredCat.lessons.every(l => l.status === 'done')) {
+          showLockedTip(
+            `Complete all lessons in "${requiredCat.label}" first to unlock this category!`
+          );
+          return;
+        }
+      }
+      
       showLockedTip(
-        previousTitle
-          ? `Finish "${previousTitle}" first to unlock this!`
-          : 'Finish the lesson before this one to unlock it!'
+        previousLesson 
+          ? `Finish "${previousLesson.title}" first to unlock this lesson!` 
+          : 'Complete the previous lesson to unlock this one!'
       );
       return;
     }
@@ -599,47 +860,70 @@ export default function Lessons() {
     }
   };
 
-  const completeLesson = (categoryId: string, lessonId: string) => {
-    setCategories((prev) =>
-      prev.map((c) => {
-        if (c.id !== categoryId) return c;
-        const idx = c.lessons.findIndex((l) => l.id === lessonId);
-        const lessons = c.lessons.map((l, i) => {
-          if (l.id === lessonId) return { ...l, status: 'done' as const };
-          if (i === idx + 1 && l.status === 'locked') return { ...l, status: 'active' as const };
-          return l;
+  // Complete lesson and save to API
+  const completeLesson = async (categoryId: string, lessonId: string) => {
+    try {
+      await apiRequest('saveLessonProgress', 'POST', {
+        user_id: userId,
+        category_id: categoryId,
+        lesson_id: lessonId,
+        status: 'done',
+        cards_mastery: mastery,
+      });
+
+      const category = categories.find(c => c.id === categoryId);
+      if (!category) return;
+
+      const lessonIndex = category.lessons.findIndex(l => l.id === lessonId);
+      const nextLesson = category.lessons[lessonIndex + 1];
+
+      if (nextLesson && nextLesson.status === 'locked') {
+        await apiRequest('saveLessonProgress', 'POST', {
+          user_id: userId,
+          category_id: categoryId,
+          lesson_id: nextLesson.id,
+          status: 'active',
+          cards_mastery: {},
         });
-        return { ...c, lessons };
-      })
+      }
+
+      const allLessonsDone = category.lessons.every(l => 
+        l.id === lessonId ? true : l.status === 'done'
+      );
+
+      if (allLessonsDone) {
+        const nextCategory = categories.find(c => c.requiredCategoryId === categoryId);
+        if (nextCategory) {
+          const firstLesson = nextCategory.lessons[0];
+          if (firstLesson && firstLesson.status === 'locked') {
+            await apiRequest('saveLessonProgress', 'POST', {
+              user_id: userId,
+              category_id: nextCategory.id,
+              lesson_id: firstLesson.id,
+              status: 'active',
+              cards_mastery: {},
+            });
+          }
+        }
+      }
+
+      await loadProgress();
+      closePractice();
+
+    } catch (error) {
+      console.error('Error completing lesson:', error);
+      Alert.alert('Error', 'Failed to save lesson progress. Please try again.');
+    }
+  };
+
+  // ── EARLY RETURN AFTER ALL HOOKS ──
+  if (!cat || loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: C.bg, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ fontSize: 18, color: C.ink }}>Loading lessons...</Text>
+      </View>
     );
-    closePractice();
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'done':
-        return <CheckCircle size={22} color={C.success} />;
-      case 'active':
-        return <View style={styles.activeDot} />;
-      case 'locked':
-        return <Lock size={18} color={C.slateLight} />;
-      default:
-        return null;
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'done':
-        return 'Done!';
-      case 'active':
-        return 'Keep going';
-      case 'locked':
-        return 'Locked';
-      default:
-        return '';
-    }
-  };
+  }
 
   /* ---------- Lesson practice screen ---------- */
   if (selectedLesson) {
@@ -699,7 +983,7 @@ export default function Lessons() {
               <Text style={[styles.lessonCategoryText, { color: category.color }]}>{category.label}</Text>
             </View>
 
-            {cardIndex === 0 && !revealed && (
+            {cardIndex === 0 && (
               <View style={styles.introRow}>
                 <Image source={images.senyaTeaching} style={styles.introMascot} resizeMode="contain" />
                 <View style={styles.introBubble}>
@@ -708,72 +992,108 @@ export default function Lessons() {
               </View>
             )}
 
-            {/* Flashcard */}
+            {/* ── Main Lesson Card ── */}
             <Animated.View
-              style={{
-                transform: [
-                  {
-                    scale: cardPop.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }),
-                  },
-                ],
-                opacity: cardPop,
-              }}
+              style={[
+                styles.lessonCardContainer,
+                {
+                  transform: [
+                    {
+                      scale: cardPop.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] }),
+                    },
+                  ],
+                  opacity: cardPop,
+                },
+              ]}
             >
-              <BouncyPress onPress={() => setRevealed((r) => !r)} style={[styles.flashcard, { borderColor: category.color }]}>
-                <View style={[styles.flashcardImageWrap, { backgroundColor: category.bgColor }]}>
+              <LinearGradient
+                colors={[category.color + '15', category.color + '08', '#ffffff']}
+                style={styles.lessonCardGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              
+              {/* Decorative top bar */}
+              <View style={[styles.lessonCardTopBar, { backgroundColor: category.color }]} />
+
+              <View style={styles.lessonCardContent}>
+                {/* Sign Label with badge */}
+                <View style={styles.signLabelContainer}>
+                  <View style={[styles.signNumberBadge, { backgroundColor: category.color }]}>
+                    <Text style={styles.signNumberText}>{cardIndex + 1}</Text>
+                  </View>
+                  <Text style={[styles.signLabel, { color: category.color }]}>
+                    {current.label}
+                  </Text>
+                </View>
+
+                {/* Image */}
+                <View style={[styles.signImageContainer, { backgroundColor: category.bgColor }]}>
                   {referenceImage ? (
-                    <Image source={referenceImage} style={styles.flashcardImage} resizeMode="contain" />
+                    <Image source={referenceImage} style={styles.signImage} resizeMode="contain" />
                   ) : (
-                    <View style={[styles.flashcardPlaceholder, { backgroundColor: category.color + '22' }]}>
+                    <View style={[styles.signImagePlaceholder, { backgroundColor: category.color + '22' }]}>
                       {category.iconComponent}
                     </View>
                   )}
                 </View>
 
-                <Text style={[styles.flashcardLabel, { color: category.color }]}>{current.label}</Text>
-
-                {!revealed ? (
-                  <View style={styles.flashcardTapHint}>
-                    <Image source={images.senyaMagnify} style={styles.tapHintMascot} resizeMode="contain" />
-                    <Text style={styles.flashcardTapHintText}>Tap the card to see a tip!</Text>
+                {/* Description / How to do it with Senya beside it */}
+                <View style={styles.descriptionWrapper}>
+                  <Image source={images.senyaTeaching} style={styles.descriptionSenya} resizeMode="contain" />
+                  <View style={[styles.descriptionContainer, { borderColor: category.color + '44' }]}>
+                    <View style={styles.descriptionHeader}>
+                      <Hands size={18} color={category.color} />
+                      <Text style={[styles.descriptionTitle, { color: category.color }]}>
+                        How to sign
+                      </Text>
+                    </View>
+                    <Text style={styles.descriptionText}>
+                      {current.cue}
+                    </Text>
                   </View>
-                ) : (
-                  <Animated.Text style={[styles.flashcardCue, { opacity: cueFade }]}>{current.cue}</Animated.Text>
-                )}
-              </BouncyPress>
+                </View>
+              </View>
             </Animated.View>
 
-            {/* Self-assessment — big, thumb-friendly, clearly labeled */}
-            {revealed && (
-              <View style={styles.assessRow}>
-                <BouncyPress
-                  style={[styles.assessBtn, { backgroundColor: C.needsWork }]}
-                  onPress={() => {
-                    markCard(current.id, 'needs-practice');
-                    goNext(cards);
-                  }}
-                >
-                  <RotateCw size={20} color="#fff" />
-                  <Text style={styles.assessBtnText}>Practice More</Text>
-                </BouncyPress>
-                <BouncyPress
-                  style={[styles.assessBtn, { backgroundColor: C.success }]}
-                  onPress={() => {
-                    markCard(current.id, 'got-it');
-                    goNext(cards);
-                  }}
-                >
-                  <ThumbsUp size={20} color="#fff" />
-                  <Text style={styles.assessBtnText}>I Got It!</Text>
-                </BouncyPress>
-              </View>
-            )}
+            {/* ── Action Buttons ── */}
+            <View style={styles.actionButtonsContainer}>
+              <BouncyPress
+                style={[styles.actionButton, styles.practiceButton]}
+                onPress={() => {
+                  markCard(current.id, 'needs-practice');
+                  goNext(cards);
+                }}
+              >
+                <LinearGradient
+                  colors={['#F59E0B', '#D97706']}
+                  style={styles.actionButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+                <RotateCw size={22} color="#fff" />
+                <Text style={styles.actionButtonText}>Practice More</Text>
+              </BouncyPress>
 
-            {!revealed && (
-              <Text style={styles.helperNudge}>Look at the picture, try the sign, then tap the card 👆</Text>
-            )}
+              <BouncyPress
+                style={[styles.actionButton, styles.gotItButton]}
+                onPress={() => {
+                  markCard(current.id, 'got-it');
+                  goNext(cards);
+                }}
+              >
+                <LinearGradient
+                  colors={['#10B981', '#059669']}
+                  style={styles.actionButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+                <ThumbsUp size={22} color="#fff" />
+                <Text style={styles.actionButtonText}>I Got It!</Text>
+              </BouncyPress>
+            </View>
 
-            {/* Dot indicators for all cards in this lesson */}
+            {/* ── Progress Dots ── */}
             <View style={styles.dotsRow}>
               {cards.map((c, i) => {
                 const state = mastery[c.id];
@@ -795,7 +1115,7 @@ export default function Lessons() {
             </View>
           </ScrollView>
         ) : (
-          /* ---------- Lesson complete summary ---------- */
+          // ── Lesson Complete Summary ──
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.lessonContent, { paddingBottom: 40 }]}>
             <GlassCard style={styles.summaryCard}>
               <CelebrationSparkles />
@@ -884,26 +1204,43 @@ export default function Lessons() {
         >
           {categories.map((c) => {
             const active = activeId === c.id;
+            const isUnlocked = isCategoryUnlocked(c, categories);
             return (
               <BouncyPress
                 key={c.id}
-                onPress={() => setActiveId(c.id)}
+                onPress={() => {
+                  if (isUnlocked || c.id === 'alphabet') {
+                    setActiveId(c.id);
+                  } else {
+                    const requiredCat = categories.find(cat => cat.id === c.requiredCategoryId);
+                    showLockedTip(
+                      `Complete "${requiredCat?.label || 'previous'}" first to unlock this category!`
+                    );
+                  }
+                }}
                 style={[
                   styles.chip,
                   active
                     ? { backgroundColor: c.color, borderColor: c.color }
-                    : { backgroundColor: 'rgba(255,255,255,0.7)', borderColor: C.border },
+                    : { 
+                        backgroundColor: isUnlocked ? 'rgba(255,255,255,0.7)' : 'rgba(200,200,200,0.5)',
+                        borderColor: isUnlocked ? C.border : '#ddd',
+                      },
                 ]}
               >
                 <View style={styles.chipIconWrap}>{c.iconComponent}</View>
-                <Text style={[styles.chipText, { color: active ? '#fff' : C.slate }]}>{c.label}</Text>
+                <Text style={[styles.chipText, { color: active ? '#fff' : isUnlocked ? C.slate : '#aaa' }]}>
+                  {c.label}
+                </Text>
+                {!isUnlocked && c.id !== 'alphabet' && (
+                  <Lock size={14} color="#aaa" />
+                )}
               </BouncyPress>
             );
           })}
         </ScrollView>
       </View>
 
-      {/* Friendly locked-lesson tip, replaces the old "nothing happens" tap */}
       {lockedTip && (
         <Animated.View style={[styles.lockedTipWrap, { opacity: lockedTipOpacity }]}>
           <Image source={images.senyaMagnify} style={styles.lockedTipMascot} resizeMode="contain" />
@@ -944,60 +1281,128 @@ export default function Lessons() {
           </View>
         </LinearGradient>
 
-        {cat.lessons.map((lesson, i) => {
-          const isDone = lesson.status === 'done';
-          const isActive = lesson.status === 'active';
-          const isLocked = lesson.status === 'locked';
-          const previousTitle = i > 0 ? cat.lessons[i - 1].title : undefined;
+        {/* ── Continue Lesson hero card ── */}
+        {activeLesson && (
+          <BouncyPress onPress={() => handleOpenLesson(cat.id, activeLesson)}>
+            <View style={styles.continueCard}>
+              <LinearGradient
+                colors={[cat.color, cat.color + 'CC']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <View style={styles.continueTopRow}>
+                <View style={styles.continueTagPill}>
+                  <Sparkle size={12} color="#fff" />
+                  <Text style={styles.continueTagText}>Continue</Text>
+                </View>
+                <Text style={styles.continueQPillText}>{activeLesson.cards.length} signs</Text>
+              </View>
+              <View style={styles.continueBody}>
+                <Animated.View style={[styles.continueIconWrap, { transform: [{ scale: pulseAnim }] }]}>
+                  {cat.iconComponent}
+                </Animated.View>
+                <View style={styles.continueTextCol}>
+                  <Text style={styles.continueTitle} numberOfLines={1}>{activeLesson.title}</Text>
+                  <Text style={styles.continueDescription} numberOfLines={2}>{activeLesson.description}</Text>
+                </View>
+              </View>
+              <View style={styles.continueCta}>
+                <Text style={[styles.continueCtaText, { color: cat.color }]}>Start lesson</Text>
+              </View>
+            </View>
+          </BouncyPress>
+        )}
 
-          return (
-            <BouncyPress
-              key={lesson.id}
-              disabled={false}
-              onPress={() => handleOpenLesson(cat.id, lesson, previousTitle)}
-              style={[
-                styles.lessonItem,
-                {
-                  backgroundColor: isLocked ? 'rgba(255,255,255,0.5)' : '#fff',
-                  borderColor: isActive ? cat.color : C.border,
-                  borderWidth: isActive ? 2 : 1,
-                  opacity: isLocked ? 0.65 : 1,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.lessonIconWrap,
-                  { backgroundColor: isDone || isActive ? cat.bgColor : 'rgba(255,255,255,0.5)' },
-                ]}
+        {/* ── Section label ── */}
+        <View style={styles.sectionLabelRow}>
+          <View style={[styles.sectionLabelBar, { backgroundColor: cat.color }]} />
+          <Text style={styles.sectionLabelText}>All Lessons</Text>
+        </View>
+
+        {/* ── Lesson card grid with dynamic status ── */}
+        <View style={styles.lessonGrid}>
+          {cat.lessons.map((lesson, i) => {
+            const isDone = lesson.status === 'done';
+            const isActive = lesson.status === 'active';
+            const isLocked = lesson.status === 'locked';
+            
+            const showBlueBar = isActive || isDone;
+
+            return (
+              <BouncyPress
+                key={lesson.id}
+                style={{ width: LESSON_CARD_WIDTH }}
+                onPress={() => handleOpenLesson(cat.id, lesson)}
               >
-                {isDone ? (
-                  <CheckCircle size={26} color={C.success} />
-                ) : isLocked ? (
-                  <Lock size={22} color={C.slateLight} />
-                ) : (
-                  cat.iconComponent
-                )}
-              </View>
+                <GlassCard
+                  style={[
+                    styles.lessonCard,
+                    { 
+                      borderColor: isActive 
+                        ? cat.color 
+                        : isDone 
+                          ? C.success + '55' 
+                          : C.border 
+                    },
+                    isLocked && styles.lessonCardLocked,
+                  ]}
+                >
+                  {showBlueBar && (
+                    <View style={[styles.blueBar, { backgroundColor: isActive ? cat.color : C.success }]} />
+                  )}
 
-              <View style={styles.lessonText}>
-                <Text style={[styles.lessonTitle, { color: isLocked ? C.slateLight : C.ink }]}>
-                  {lesson.title}
-                </Text>
-                <Text style={[styles.lessonSub, { color: C.slate }]} numberOfLines={1}>
-                  {lesson.cards.length} signs · {lesson.description}
-                </Text>
-              </View>
+                  <View style={styles.lessonCardTopRow}>
+                    <View
+                      style={[
+                        styles.lessonCardIconWrap,
+                        {
+                          backgroundColor: isDone
+                            ? C.success + '22'
+                            : isActive
+                            ? cat.bgColor
+                            : 'rgba(120,130,160,0.12)',
+                        },
+                      ]}
+                    >
+                      {isDone ? (
+                        <CheckCircle size={22} color={C.success} />
+                      ) : isLocked ? (
+                        <Lock size={20} color={C.slateLight} />
+                      ) : (
+                        cat.iconComponent
+                      )}
+                    </View>
+                    {isActive && (
+                      <View style={[styles.lessonCardBadge, { backgroundColor: cat.color }]}>
+                        <Text style={styles.lessonCardBadgeText}>ACTIVE</Text>
+                      </View>
+                    )}
+                    {isDone && (
+                      <View style={[styles.lessonCardBadge, { backgroundColor: C.success }]}>
+                        <Text style={styles.lessonCardBadgeText}>DONE</Text>
+                      </View>
+                    )}
+                  </View>
 
-              <View style={styles.statusContainer}>
-                {getStatusIcon(lesson.status)}
-                <Text style={[styles.statusText, { color: isLocked ? C.slateLight : C.slate }]}>
-                  {getStatusText(lesson.status)}
-                </Text>
-              </View>
-            </BouncyPress>
-          );
-        })}
+                  <Text
+                    style={[styles.lessonCardTitle, { color: isLocked ? C.slateLight : C.ink }]}
+                    numberOfLines={2}
+                  >
+                    {lesson.title}
+                  </Text>
+                  <Text style={styles.lessonCardDescription} numberOfLines={2}>
+                    {lesson.description}
+                  </Text>
+
+                  <View style={styles.lessonCardFooter}>
+                    <Text style={styles.lessonCardMetaText}>{lesson.cards.length} signs</Text>
+                  </View>
+                </GlassCard>
+              </BouncyPress>
+            );
+          })}
+        </View>
 
         <GlassCard style={styles.progressCard}>
           <View style={styles.progressCardHeader}>
@@ -1125,27 +1530,85 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', backgroundColor: '#fff', borderRadius: 4 },
   catBannerPercent: { fontSize: 15, fontWeight: '800', color: '#fff' },
 
-  lessonItem: {
+  continueCard: {
+    borderRadius: 22,
+    padding: 18,
+    overflow: 'hidden',
+    marginBottom: 22,
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 5,
+  },
+  continueTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  continueTagPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-    minHeight: 76,
-    shadowColor: '#1E3A8A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
-  lessonIconWrap: { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  lessonText: { flex: 1 },
-  lessonTitle: { fontSize: 16, fontWeight: '800', color: C.ink, marginBottom: 3 },
-  lessonSub: { fontSize: 12.5, fontWeight: '500', color: C.slate },
-  statusContainer: { alignItems: 'flex-end', gap: 3 },
-  statusText: { fontSize: 11, fontWeight: '700', color: C.slate, letterSpacing: 0.2 },
-  activeDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: C.goldDeep },
+  continueTagText: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
+  continueQPillText: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.9)' },
+  continueBody: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  continueIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueTextCol: { flex: 1 },
+  continueTitle: { fontSize: 19, fontWeight: '900', color: '#fff', marginBottom: 3 },
+  continueDescription: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.85)', lineHeight: 18 },
+  continueCta: {
+    backgroundColor: '#fff',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  continueCtaText: { fontSize: 14, fontWeight: '800' },
+
+  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  sectionLabelBar: { width: 4, height: 16, borderRadius: 2 },
+  sectionLabelText: { fontSize: 13, fontWeight: '800', color: C.slate, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  lessonGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP, marginBottom: 8 },
+  lessonCard: {
+    borderWidth: 2,
+    padding: 14,
+    minHeight: 158,
+    position: 'relative',
+  },
+  lessonCardLocked: { opacity: 0.65 },
+  blueBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+  },
+  lessonCardTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  lessonCardIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lessonCardBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  lessonCardBadgeText: { fontSize: 9.5, fontWeight: '900', color: '#fff', letterSpacing: 0.4 },
+  lessonCardTitle: { fontSize: 14.5, fontWeight: '800', marginBottom: 4, lineHeight: 18 },
+  lessonCardDescription: { fontSize: 11.5, fontWeight: '500', color: C.slate, lineHeight: 15, flexGrow: 1 },
+  lessonCardFooter: { marginTop: 10 },
+  lessonCardMetaText: { fontSize: 11, fontWeight: '700', color: C.slate },
 
   progressCard: { padding: 18, marginTop: 6, marginBottom: 20 },
   progressCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
@@ -1161,7 +1624,7 @@ const styles = StyleSheet.create({
   progressCardMiniTrack: { height: 6, backgroundColor: C.border, borderRadius: 3, overflow: 'hidden' },
   progressCardMiniFill: { height: '100%', backgroundColor: C.success, borderRadius: 3 },
 
-  // ── Lesson practice screen ──
+  // ── Practice screen styles ──
   lessonContent: { paddingHorizontal: 20, paddingTop: 8 },
   practiceProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
   practiceProgressTrack: { flex: 1, height: 8, backgroundColor: C.border, borderRadius: 4, overflow: 'hidden' },
@@ -1197,55 +1660,151 @@ const styles = StyleSheet.create({
   },
   lessonIntro: { fontSize: 14.5, fontWeight: '500', color: C.ink, lineHeight: 21 },
 
-  flashcard: {
-    backgroundColor: '#fff',
-    borderRadius: 26,
-    borderWidth: 2.5,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 18,
+  // ── Lesson Card ──
+  lessonCardContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    overflow: 'hidden',
+    marginBottom: 20,
     shadowColor: '#1E3A8A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
     elevation: 5,
-    minHeight: 280,
-    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
-  flashcardImageWrap: {
-    width: 150,
-    height: 150,
-    borderRadius: 22,
+  lessonCardGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  lessonCardTopBar: {
+    height: 6,
+    width: '100%',
+  },
+  lessonCardContent: {
+    padding: 20,
+  },
+  signLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  signNumberBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
   },
-  flashcardImage: { width: '100%', height: '100%', borderRadius: 18 },
-  flashcardPlaceholder: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
-  flashcardLabel: { fontSize: 30, fontWeight: '900', marginBottom: 14, textAlign: 'center' },
-  flashcardTapHint: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tapHintMascot: { width: 26, height: 26 },
-  flashcardTapHintText: { fontSize: 14, fontWeight: '700', color: C.slate },
-  flashcardCue: { fontSize: 15, fontWeight: '500', color: C.ink, textAlign: 'center', lineHeight: 22, paddingHorizontal: 8 },
-
-  helperNudge: { fontSize: 12.5, fontWeight: '600', color: C.slate, textAlign: 'center', marginBottom: 16 },
-
-  assessRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  assessBtn: {
+  signNumberText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  signLabel: {
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  signImageContainer: {
+    width: '100%',
+    height: 180,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  signImage: {
+    width: '100%',
+    height: '100%',
+  },
+  signImagePlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  descriptionWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  descriptionSenya: {
+    width: 56,
+    height: 56,
+    alignSelf: 'flex-end',
+    marginBottom: 4,
+  },
+  descriptionContainer: {
     flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 2,
+  },
+  descriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  descriptionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  descriptionText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: C.ink,
+    lineHeight: 22,
+  },
+
+  // ── Action Buttons ──
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    borderRadius: 16,
-    paddingVertical: 16,
-    minHeight: 56,
+    gap: 10,
+    paddingHorizontal: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  assessBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  actionButtonGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  practiceButton: {
+    shadowColor: '#F59E0B',
+  },
+  gotItButton: {
+    shadowColor: '#10B981',
+  },
 
   dotsRow: { flexDirection: 'row', gap: 6, justifyContent: 'center', marginBottom: 10 },
   dot: { height: 9, borderRadius: 5 },
 
+  // ── Summary Card ──
   summaryCard: { padding: 24, alignItems: 'center', marginBottom: 20, position: 'relative' },
   sparkleLayer: { ...StyleSheet.absoluteFillObject },
   sparkleItem: { position: 'absolute' },

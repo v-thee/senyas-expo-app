@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,14 @@ import {
   Animated,
   Easing,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -34,6 +36,53 @@ const images = {
   beginner: require('@/assets/images/beginner.png'),
   book: require('@/assets/images/book.png'),
 };
+
+// ── API Configuration ──
+const API_URL = Platform.OS === 'android' 
+  ? 'http://192.168.24.206/api/api.php'
+  : 'http://192.168.24.206/api/api.php';
+
+// ── API Helper Functions ──
+async function apiRequest(action: string, method: 'GET' | 'POST' = 'GET', data?: any): Promise<any> {
+  let url = `${API_URL}?action=${action}`;
+  const options: RequestInit = {
+    method: method,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  };
+
+  if (method === 'POST' && data) {
+    const formData = new URLSearchParams();
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined && data[key] !== null) {
+        if (typeof data[key] === 'object') {
+          formData.append(key, JSON.stringify(data[key]));
+        } else {
+          formData.append(key, String(data[key]));
+        }
+      }
+    });
+    options.body = formData.toString();
+  } else if (method === 'GET' && data) {
+    const params = new URLSearchParams(data);
+    url += `&${params.toString()}`;
+  }
+
+  try {
+    const response = await fetch(url, options);
+    const result = await response.json();
+    
+    if (result.status === 'error') {
+      throw new Error(result.message || 'API request failed');
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('API request error:', error);
+    throw error;
+  }
+}
 
 // ── Icons (Feather-style outlines, no emoji) ──
 
@@ -149,23 +198,108 @@ function GlassCard({
   );
 }
 
-// ── Type definitions ──
+// ── Types ──
+interface LearningProgress {
+  category_id: string;
+  label: string;
+  icon: any;
+  progress: number;
+  status: 'locked' | 'active' | 'done';
+  chipColor: string;
+  textColor: string;
+  bgColor: string;
+}
+
 type PracticeItem = {
   img: any;
   label: string;
   gradient: readonly [string, string];
+  route?: string;
 };
 
 const PRACTICE_ITEMS: PracticeItem[] = [
-  { img: images.multipleChoice, label: 'Multiple Choice', gradient: ['#2563EB', '#1E3FAE'] as const },
-  { img: images.dragNdrop, label: 'Drag & Drop', gradient: ['#7C3AED', '#5B21B6'] as const },
-  { img: images.camera, label: 'Gesture Cam', gradient: ['#EC4899', '#BE185D'] as const },
-  { img: images.badges, label: 'My Badges', gradient: ['#F59E0B', '#D97706'] as const },
+  { 
+    img: images.multipleChoice, 
+    label: 'Multiple Choice', 
+    gradient: ['#2563EB', '#1E3FAE'] as const,
+    route: '/quiz/quiz' 
+  },
+  { 
+    img: images.dragNdrop, 
+    label: 'Drag & Drop', 
+    gradient: ['#7C3AED', '#5B21B6'] as const, 
+    route: '/quiz/DragNDrop'
+  },
+  { 
+    img: images.camera, 
+    label: 'Gesture Cam', 
+    gradient: ['#EC4899', '#BE185D'] as const 
+  },
+  { 
+    img: images.badges, 
+    label: 'My Badges', 
+    gradient: ['#F59E0B', '#D97706'] as const 
+  },
+];
+
+// ── Map category to icon and colors ──
+const CATEGORY_MAP: Record<string, { icon: any; chipColor: string; textColor: string; bgColor: string; label: string }> = {
+  'alphabet': {
+    icon: images.alphabet,
+    chipColor: '#DBEAFE',
+    textColor: '#2563EB',
+    bgColor: 'rgba(37, 99, 235, 0.04)',
+    label: 'FSL Alphabet'
+  },
+  'greetings': {
+    icon: images.greet,
+    chipColor: '#FCE7F3',
+    textColor: '#DB2777',
+    bgColor: 'rgba(219, 39, 119, 0.04)',
+    label: 'Greetings'
+  },
+  'numbers': {
+    icon: images.numbers,
+    chipColor: '#DCFCE7',
+    textColor: '#16A34A',
+    bgColor: 'rgba(22, 163, 74, 0.04)',
+    label: 'Numbers'
+  },
+  'introductions': {
+    icon: images.book,
+    chipColor: '#E0F2FE',
+    textColor: '#0284C7',
+    bgColor: 'rgba(2, 132, 199, 0.04)',
+    label: 'Introductions'
+  },
+  'courtesy': {
+    icon: images.book,
+    chipColor: '#D1FAE5',
+    textColor: '#059669',
+    bgColor: 'rgba(5, 150, 105, 0.04)',
+    label: 'Courtesy'
+  },
+};
+
+// ── Daily Challenge Data ──
+const DAILY_CHALLENGES = [
+  { id: 1, title: 'Practice 5 Alphabet Signs', description: 'Sign A through E and earn your daily streak bonus.', total: 6, completed: 0 },
+  { id: 2, title: 'Greeting Practice', description: 'Sign Hello, Good Morning, and Goodbye.', total: 3, completed: 0 },
+  { id: 3, title: 'Number Signs', description: 'Sign numbers 1 through 10.', total: 10, completed: 0 },
 ];
 
 export default function HomeTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [userId, setUserId] = useState<number>(1);
+  const [userName, setUserName] = useState<string>('Student');
+  const [learningProgress, setLearningProgress] = useState<LearningProgress[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [levelProgress, setLevelProgress] = useState<number>(0);
+  const [totalLessonsDone, setTotalLessonsDone] = useState<number>(0);
+  const [totalLessons, setTotalLessons] = useState<number>(15);
+  const [dailyChallenge, setDailyChallenge] = useState(DAILY_CHALLENGES[0]);
+  const [streakCount, setStreakCount] = useState<number>(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -174,6 +308,167 @@ export default function HomeTab() {
   const mascotTilt = useRef(new Animated.Value(0)).current;
   const shimmerAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(0)).current;
+
+  // Load user data and progress
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        // Get user from storage
+        const userJson = await AsyncStorage.getItem('user');
+        let currentUserId = 1;
+        if (userJson) {
+          const user = JSON.parse(userJson);
+          currentUserId = user.id || 1;
+          setUserId(currentUserId);
+          // Set user name - use firstName if available, fallback to 'Student'
+          if (user.firstName) {
+            setUserName(user.firstName);
+          } else if (user.name) {
+            setUserName(user.name.split(' ')[0]); // Get first name from full name
+          }
+        }
+
+        // Fetch lesson progress
+        const result = await apiRequest('getLessonProgress', 'GET', { user_id: currentUserId });
+        const progressData = result.progress || [];
+
+        // Calculate progress per category
+        const categoryProgress: Record<string, { done: number; total: number }> = {};
+        let totalDone = 0;
+        let totalLessonsCount = 0;
+
+        // Get all categories from the map
+        const categories = Object.keys(CATEGORY_MAP);
+        
+        // Initialize category progress
+        categories.forEach(catId => {
+          categoryProgress[catId] = { done: 0, total: 0 };
+        });
+
+        // Process progress data
+        progressData.forEach((p: any) => {
+          if (categoryProgress[p.category_id]) {
+            if (p.status === 'done') {
+              categoryProgress[p.category_id].done++;
+              totalDone++;
+            }
+            categoryProgress[p.category_id].total++;
+            totalLessonsCount++;
+          }
+        });
+
+        setTotalLessonsDone(totalDone);
+        setTotalLessons(totalLessonsCount || 15);
+
+        // Calculate level progress (percentage of total lessons done)
+        const totalPossible = 15; // Total lessons across all categories
+        const pct = Math.round((totalDone / totalPossible) * 100);
+        setLevelProgress(pct);
+
+        // Build learning progress items
+        const progressItems: LearningProgress[] = [];
+
+        categories.forEach(catId => {
+          const catInfo = CATEGORY_MAP[catId];
+          if (!catInfo) return;
+
+          const stats = categoryProgress[catId];
+          if (stats && stats.total > 0) {
+            const pctComplete = Math.round((stats.done / stats.total) * 100);
+            const status = pctComplete === 100 ? 'done' : pctComplete > 0 ? 'active' : 'locked';
+            
+            progressItems.push({
+              category_id: catId,
+              label: catInfo.label,
+              icon: catInfo.icon,
+              progress: pctComplete,
+              status: status,
+              chipColor: catInfo.chipColor,
+              textColor: catInfo.textColor,
+              bgColor: catInfo.bgColor,
+            });
+          }
+        });
+
+        // If no progress yet, show the first category with 0%
+        if (progressItems.length === 0) {
+          const firstCat = CATEGORY_MAP['alphabet'];
+          progressItems.push({
+            category_id: 'alphabet',
+            label: firstCat.label,
+            icon: firstCat.icon,
+            progress: 0,
+            status: 'active',
+            chipColor: firstCat.chipColor,
+            textColor: firstCat.textColor,
+            bgColor: firstCat.bgColor,
+          });
+        }
+
+        setLearningProgress(progressItems);
+
+        // ── Update Daily Challenge based on progress ──
+        // Check which lessons are done in the alphabet category
+        const alphabetProgress = progressData.filter((p: any) => p.category_id === 'alphabet');
+        const alphabetDone = alphabetProgress.filter((p: any) => p.status === 'done').length;
+        
+        // Update daily challenge completion
+        const updatedChallenge = { ...DAILY_CHALLENGES[0] };
+        updatedChallenge.completed = Math.min(alphabetDone, updatedChallenge.total);
+        setDailyChallenge(updatedChallenge);
+
+        // ── Fetch streak from user stats ──
+        try {
+          const statsResult = await apiRequest('getUserStats', 'GET', { user_id: currentUserId });
+          if (statsResult.stats && statsResult.stats.current_streak) {
+            setStreakCount(statsResult.stats.current_streak);
+          }
+        } catch (statsError) {
+          console.error('Error loading stats:', statsError);
+        }
+
+      } catch (error) {
+        console.error('Error loading user data:', error);
+        // Fallback: show default categories
+        setLearningProgress([
+          {
+            category_id: 'alphabet',
+            label: 'FSL Alphabet',
+            icon: images.alphabet,
+            progress: 0,
+            status: 'active',
+            chipColor: '#DBEAFE',
+            textColor: '#2563EB',
+            bgColor: 'rgba(37, 99, 235, 0.04)',
+          },
+          {
+            category_id: 'greetings',
+            label: 'Greetings',
+            icon: images.greet,
+            progress: 0,
+            status: 'locked',
+            chipColor: '#FCE7F3',
+            textColor: '#DB2777',
+            bgColor: 'rgba(219, 39, 119, 0.04)',
+          },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUserData();
+  }, []);
+
+  // Animate level progress bar when it changes
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: levelProgress,
+      duration: 1200,
+      useNativeDriver: false,
+      easing: Easing.out(Easing.cubic),
+    }).start();
+  }, [levelProgress]);
 
   useEffect(() => {
     // Gentle continuous float + wiggle loop for the mascot logo
@@ -266,13 +561,6 @@ export default function HomeTab() {
         easing: Easing.out(Easing.back(1.5)),
       }),
     ]).start();
-
-    Animated.timing(progressAnim, {
-      toValue: 68,
-      duration: 1200,
-      useNativeDriver: false,
-      easing: Easing.out(Easing.cubic),
-    }).start();
   }, []);
 
   const progressWidth = progressAnim.interpolate({
@@ -289,6 +577,52 @@ export default function HomeTab() {
     inputRange: [0, 1],
     outputRange: [1, 1.05],
   });
+
+  // Navigate to quiz when Multiple Choice is clicked
+  const handlePracticePress = (item: PracticeItem) => {
+    if (item.route) {
+      router.push(item.route as any);
+    }
+  };
+
+  // Navigate to lesson when learning card is clicked
+  const handleLearningPress = (categoryId: string) => {
+    router.push({
+      pathname: '../screens/Lessons',
+      params: {
+        category: categoryId,
+      },
+    });
+  };
+
+  // Navigate to daily challenge
+  const handleDailyChallenge = () => {
+    router.push('../screens/Lessons');
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ fontSize: 18, color: '#1E3A8A' }}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // Determine level title based on progress
+  const getLevelTitle = (progress: number) => {
+    if (progress >= 80) return 'Advanced Signer';
+    if (progress >= 50) return 'Intermediate Signer';
+    if (progress >= 25) return 'Novice Signer';
+    return 'Beginner Signer';
+  };
+
+  const getLevelXP = (progress: number) => {
+    const xp = Math.round((progress / 100) * 500);
+    return { current: xp, next: 500 };
+  };
+
+  const xpData = getLevelXP(levelProgress);
+  const xpProgress = Math.round((xpData.current / xpData.next) * 100);
 
   return (
     <View style={{ flex: 1 }}>
@@ -329,7 +663,7 @@ export default function HomeTab() {
             </TouchableOpacity>
             <View style={styles.streakPill}>
               <Image source={images.streak} style={styles.streakPillIcon} resizeMode="contain" />
-              <Text style={styles.streakPillText}>5</Text>
+              <Text style={styles.streakPillText}>{streakCount}</Text>
             </View>
             <TouchableOpacity style={styles.iconCircle}>
               <BellIcon size={17} color="#1E3A8A" />
@@ -370,7 +704,7 @@ export default function HomeTab() {
                   end={{ x: 1, y: 0 }}
                 >
                   <UserIcon size={18} color="#FFFFFF" />
-                  <Text style={styles.userName}>Hello, Student!</Text>
+                  <Text style={styles.userName}>Hello, {userName}!</Text>
                 </LinearGradient>
               </View>
               
@@ -381,11 +715,11 @@ export default function HomeTab() {
                     style={styles.badgeIcon}
                     resizeMode="contain"
                   />
-                  <Text style={[styles.badgeText, { color: '#2563EB' }]}>Beginner</Text>
+                  <Text style={[styles.badgeText, { color: '#2563EB' }]}>{getLevelTitle(levelProgress)}</Text>
                 </View>
                 <View style={[styles.badgeContainer, { backgroundColor: '#FFFBEB' }]}>
                   <Image source={images.streak} style={styles.badgeIcon} resizeMode="contain" />
-                  <Text style={[styles.badgeText, { color: '#92400E' }]}>5 day streak</Text>
+                  <Text style={[styles.badgeText, { color: '#92400E' }]}>{streakCount} day streak</Text>
                 </View>
               </View>
             </View>
@@ -419,8 +753,8 @@ export default function HomeTab() {
                 <View style={styles.levelBadge}>
                   <Text style={styles.levelBadgeText}>LEVEL 1</Text>
                 </View>
-                <Text style={styles.levelSubtitle}>Novice Signer</Text>
-                <Text style={styles.percentageTextSmall}>68%</Text>
+                <Text style={styles.levelSubtitle}>{getLevelTitle(levelProgress)}</Text>
+                <Text style={styles.percentageTextSmall}>{levelProgress}%</Text>
               </View>
               <View style={styles.xpBarWrap}>
                 <Animated.View style={{ width: progressWidth, height: '100%' }}>
@@ -432,13 +766,13 @@ export default function HomeTab() {
                   />
                 </Animated.View>
               </View>
-              <Text style={styles.xpText}>340 / 500 XP · 160 XP to Intermediate</Text>
+              <Text style={styles.xpText}>{xpData.current} / {xpData.next} XP · {xpData.next - xpData.current} XP to {getLevelTitle(Math.min(levelProgress + 25, 100))}</Text>
             </View>
           </View>
         </GlassCard>
 
         {/* ── Daily Challenge ── */}
-        <TouchableOpacity activeOpacity={0.9}>
+        <TouchableOpacity activeOpacity={0.9} onPress={handleDailyChallenge}>
           <LinearGradient
             colors={['#2F6FE0', '#1E3FAE']}
             start={{ x: 0, y: 0 }}
@@ -458,9 +792,9 @@ export default function HomeTab() {
 
             <View style={styles.challengeBody}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={styles.challengeDesc}>Practice 5 Alphabet Signs</Text>
+                <Text style={styles.challengeDesc}>{dailyChallenge.title}</Text>
                 <Text style={styles.challengeSubDesc}>
-                  Sign A through E and earn your daily streak bonus.
+                  {dailyChallenge.description}
                 </Text>
               </View>
               <View style={styles.challengeIconBox}>
@@ -471,9 +805,16 @@ export default function HomeTab() {
             <View style={styles.challengeFooterRow}>
               <View style={{ flex: 1 }}>
                 <View style={styles.challengeProgressBar}>
-                  <View style={[styles.challengeProgressFill, { width: '33%' }]} />
+                  <View 
+                    style={[
+                      styles.challengeProgressFill, 
+                      { width: `${Math.round((dailyChallenge.completed / dailyChallenge.total) * 100)}%` }
+                    ]} 
+                  />
                 </View>
-                <Text style={styles.challengeProgressText}>2 of 6 completed</Text>
+                <Text style={styles.challengeProgressText}>
+                  {dailyChallenge.completed} of {dailyChallenge.total} completed
+                </Text>
               </View>
               
               {/* Glassmorphism Start Button with Pulse */}
@@ -485,7 +826,9 @@ export default function HomeTab() {
                     end={{ x: 1, y: 1 }}
                     style={styles.startBtnGradient}
                   >
-                    <Text style={styles.startBtnText}>Start</Text>
+                    <Text style={styles.startBtnText}>
+                      {dailyChallenge.completed === dailyChallenge.total ? 'Done!' : 'Start'}
+                    </Text>
                     <PlayIcon size={16} color="#1E3FAE" />
                   </LinearGradient>
                 </GlassCard>
@@ -500,37 +843,51 @@ export default function HomeTab() {
             <BookOpenIcon size={18} color="#1E3A8A" />
             <Text style={styles.sectionTitle}>Continue Learning</Text>
           </View>
-          <TouchableOpacity style={styles.seeAllBtn}>
+          <TouchableOpacity 
+            style={styles.seeAllBtn}
+            onPress={() => router.push('../screens/Lessons')}
+          >
             <Text style={styles.seeAll}>See All</Text>
             <ArrowRightIcon size={14} color="#2563EB" />
           </TouchableOpacity>
         </View>
 
         <View style={styles.learningCards}>
-          {[
-            { img: images.alphabet, title: 'FSL Alphabet', pct: 65, chip: '#DBEAFE', color: '#2563EB', bg: 'rgba(37, 99, 235, 0.04)' },
-            { img: images.greet, title: 'Greetings', pct: 65, chip: '#FCE7F3', color: '#DB2777', bg: 'rgba(219, 39, 119, 0.04)' },
-            { img: images.numbers, title: 'Numbers 1–10', pct: 30, chip: '#DCFCE7', color: '#16A34A', bg: 'rgba(22, 163, 74, 0.04)' },
-          ].map((item, i) => (
-            <GlassCard key={i} style={[styles.learningCard, { backgroundColor: item.bg }]} intensity={35}>
-              <View style={styles.learningCardLeft}>
-                <View style={[styles.iconChip, { backgroundColor: item.chip }]}>
-                  <Image source={item.img} style={styles.learningIcon} resizeMode="contain" />
-                </View>
-                <View style={styles.learningInfo}>
-                  <Text style={styles.learningTitle}>{item.title}</Text>
-                  <View style={styles.statusPill}>
-                    <Text style={styles.learningStatus}>In Progress</Text>
+          {learningProgress.map((item, i) => (
+            <TouchableOpacity 
+              key={i} 
+              onPress={() => handleLearningPress(item.category_id)}
+              activeOpacity={0.8}
+            >
+              <GlassCard style={[styles.learningCard, { backgroundColor: item.bgColor }]} intensity={35}>
+                <View style={styles.learningCardLeft}>
+                  <View style={[styles.iconChip, { backgroundColor: item.chipColor }]}>
+                    <Image source={item.icon} style={styles.learningIcon} resizeMode="contain" />
+                  </View>
+                  <View style={styles.learningInfo}>
+                    <Text style={styles.learningTitle}>{item.label}</Text>
+                    <View style={[styles.statusPill, { 
+                      backgroundColor: item.status === 'done' ? '#D1FAE5' : 
+                                     item.status === 'active' ? '#FEF3C7' : '#F3F4F6'
+                    }]}>
+                      <Text style={[styles.learningStatus, {
+                        color: item.status === 'done' ? '#065F46' : 
+                               item.status === 'active' ? '#92400E' : '#9CA3AF'
+                      }]}>
+                        {item.status === 'done' ? 'Completed' : 
+                         item.status === 'active' ? 'In Progress' : 'Locked'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-              <View style={styles.learningProgress}>
-                <Text style={[styles.learningPercent, { color: item.color }]}>{item.pct}%</Text>
-                <View style={styles.learningProgressBar}>
-                  <View style={[styles.learningProgressFill, { width: `${item.pct}%`, backgroundColor: item.color }]} />
+                <View style={styles.learningProgress}>
+                  <Text style={[styles.learningPercent, { color: item.textColor }]}>{item.progress}%</Text>
+                  <View style={styles.learningProgressBar}>
+                    <View style={[styles.learningProgressFill, { width: `${item.progress}%`, backgroundColor: item.textColor }]} />
+                  </View>
                 </View>
-              </View>
-            </GlassCard>
+              </GlassCard>
+            </TouchableOpacity>
           ))}
         </View>
 
@@ -544,7 +901,11 @@ export default function HomeTab() {
 
         <View style={styles.quickPracticeGrid}>
           {PRACTICE_ITEMS.map((item, i) => (
-            <TouchableOpacity key={i} activeOpacity={0.9}>
+            <TouchableOpacity 
+              key={i} 
+              activeOpacity={0.9}
+              onPress={() => handlePracticePress(item)}
+            >
               <GlassCard style={styles.practiceItem} intensity={40}>
                 <View style={[styles.practiceIconContainer, { backgroundColor: item.gradient[0] + '15' }]}>
                   <Image source={item.img} style={styles.practiceIcon} resizeMode="contain" />
@@ -567,7 +928,7 @@ export default function HomeTab() {
               </View>
               <View style={styles.achievementTextWrap}>
                 <Text style={styles.achievementTitle}>Almost There!</Text>
-                <Text style={styles.achievementDesc}>Complete 3 more lessons to unlock the</Text>
+                <Text style={styles.achievementDesc}>Complete {Math.max(0, 15 - totalLessonsDone)} more lessons to unlock the</Text>
                 <Text style={styles.achievementBadge}>Silver Achiever Badge</Text>
               </View>
             </View>
@@ -579,6 +940,10 @@ export default function HomeTab() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#BFE0F7',
+  },
   scroll: {
     paddingHorizontal: 20,
   },
@@ -1058,7 +1423,6 @@ const styles = StyleSheet.create({
   },
   statusPill: {
     alignSelf: 'flex-start',
-    backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
@@ -1066,7 +1430,6 @@ const styles = StyleSheet.create({
   learningStatus: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#92400E',
   },
   learningProgress: {
     alignItems: 'flex-end',

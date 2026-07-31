@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, Rect, Line, Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -28,7 +29,7 @@ const images = {
   senyaMagnify: require('@/assets/images/senya_magnify.png'),
 };
 
-const API_URL = "http://192.168.211.206/api/api.php?action=login";
+const API_URL = "http://192.168.24.206/api/api.php?action=login";
 
 interface Props {
   onLogin: () => void;
@@ -346,6 +347,12 @@ export default function Login({ onLogin }: Props) {
       setLoading(false);
 
       if (data.status === "success") {
+        console.log("Login response:", data);
+
+        await AsyncStorage.setItem("userId", data.user.id.toString());
+
+        console.log("Saved userId:", data.user.id);
+
         showModal('success', 'Login successful! Welcome back! 🎉');
       } else {
         showModal('error', data.message || 'Check LRN and password, and try again.');
